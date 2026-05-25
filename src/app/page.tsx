@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { Topbar } from '@/components/Topbar';
 import { Sidebar } from '@/components/Sidebar';
 import { NotesPanel } from '@/components/NotesPanel';
@@ -34,6 +34,10 @@ export default function Home() {
   const [renameTagName, setRenameTagName] = useState('');
   const [renameTagColor, setRenameTagColor] = useState(0);
   const [tickerToDelete, setTickerToDelete] = useState('');
+
+  const sidebarRef = useRef<HTMLElement>(null);
+  const notesListRef = useRef<HTMLDivElement>(null);
+  const editorRef = useRef<HTMLTextAreaElement>(null);
 
   // Handle new note
   const handleNew = useCallback(() => {
@@ -167,6 +171,30 @@ export default function Home() {
     }
   }, [mobilePanel, setMobilePanel]);
 
+  // Scroll-to-top for the active mobile panel
+  // When user taps the already-active nav button, scroll that panel to top
+  const handleMobileNav = useCallback((panel: 'sidebar' | 'notes' | 'editor') => {
+    if (panel === mobilePanel) {
+      // Already on this panel — scroll to top
+      const panelEl = document.querySelector(
+        panel === 'sidebar' ? '.sidebar' :
+        panel === 'notes' ? '.notes-list' :
+        '.editor-textarea'
+      ) as HTMLElement | null;
+
+      if (panelEl) {
+        // Use the __scrollToTop method if available (exposed by usePullToRefresh components)
+        if ((panelEl as any).__scrollToTop) {
+          (panelEl as any).__scrollToTop();
+        } else {
+          panelEl.scrollTop = 0;
+        }
+      }
+    } else {
+      setMobilePanel(panel);
+    }
+  }, [mobilePanel, setMobilePanel]);
+
   return (
     <>
       <Topbar onDelete={handleDelete} onNew={handleNew} />
@@ -184,21 +212,21 @@ export default function Home() {
       <nav className="mobile-nav">
         <button
           className={`mobile-nav-btn ${mobilePanel === 'sidebar' ? 'active' : ''}`}
-          onClick={() => setMobilePanel('sidebar')}
+          onClick={() => handleMobileNav('sidebar')}
         >
           <span className="mobile-nav-icon">☰</span>
           Filters
         </button>
         <button
           className={`mobile-nav-btn ${mobilePanel === 'notes' ? 'active' : ''}`}
-          onClick={() => setMobilePanel('notes')}
+          onClick={() => handleMobileNav('notes')}
         >
           <span className="mobile-nav-icon">📋</span>
           Notes
         </button>
         <button
           className={`mobile-nav-btn ${mobilePanel === 'editor' ? 'active' : ''}`}
-          onClick={() => setMobilePanel('editor')}
+          onClick={() => handleMobileNav('editor')}
         >
           <span className="mobile-nav-icon">✏️</span>
           Editor

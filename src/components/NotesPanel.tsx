@@ -2,6 +2,7 @@
 
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { useNotes } from '@/hooks/useNotes';
+import { usePullToRefresh } from '@/hooks/usePullToRefresh';
 import { PALETTE, Note } from '@/types';
 import { relDate } from '@/lib/utils';
 
@@ -12,6 +13,27 @@ export function NotesPanel() {
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
   const [isLoading, setIsLoading] = useState(false);
   const loadMoreRef = useRef<HTMLDivElement>(null);
+  const notesListRef = useRef<HTMLDivElement>(null);
+
+  // Pull-to-refresh support
+  const { containerRef: pullRef, pullState } = usePullToRefresh(70, () => {
+    // Reload the page to refresh all data
+    window.location.reload();
+  });
+
+  // Merge pullRef and notesListRef
+  const setListRef = useCallback((el: HTMLDivElement | null) => {
+    (pullRef as React.MutableRefObject<HTMLDivElement | null>).current = el;
+    (notesListRef as React.MutableRefObject<HTMLDivElement | null>).current = el;
+  }, [pullRef]);
+
+  // Expose scroll-to-top for parent
+  useEffect(() => {
+    const el = notesListRef.current;
+    if (el) {
+      (el as any).__scrollToTop = () => { el.scrollTop = 0; };
+    }
+  }, []);
 
   useEffect(() => {
     setVisibleCount(PAGE_SIZE);
@@ -59,7 +81,17 @@ export function NotesPanel() {
           <option value="ticker">Ticker A–Z</option>
         </select>
       </div>
-      <div className="notes-list" id="notesList">
+      <div className="notes-list" id="notesList" ref={setListRef} style={{ position: 'relative' }}>
+        {/* Pull-to-refresh indicator (mobile only) */}
+        <div className={`pull-refresh-indicator ${pullState !== 'idle' ? 'visible' : ''}`}>
+          {pullState === 'refreshing' ? (
+            <><span className="spinner" /> Refreshing...</>
+          ) : pullState === 'ready' ? (
+            'Release to refresh'
+          ) : (
+            'Pull to refresh'
+          )}
+        </div>
         {filteredNotes.length === 0 ? (
           <div style={{ padding: '2rem 1rem', textAlign: 'center', color: 'var(--muted)', fontSize: '13px', fontFamily: 'Syne, sans-serif' }}>
             No notes found

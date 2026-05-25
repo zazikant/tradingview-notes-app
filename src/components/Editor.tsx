@@ -2,6 +2,7 @@
 
 import { useRef, useCallback, useState, useEffect } from 'react';
 import { useNotes } from '@/hooks/useNotes';
+import { usePullToRefresh } from '@/hooks/usePullToRefresh';
 import { PALETTE } from '@/types';
 
 interface EditorProps {
@@ -83,7 +84,19 @@ export function Editor({ onCopy, onDelete, onSave }: EditorProps) {
   } = useNotes();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const tickerRef = useRef<HTMLTextAreaElement>(null);
+  const editorBodyRef = useRef<HTMLDivElement>(null);
   const [previewMode, setPreviewMode] = useState(false);
+
+  // Pull-to-refresh support on the editor body
+  const { containerRef: pullRef, pullState } = usePullToRefresh(70, () => {
+    window.location.reload();
+  });
+
+  // Merge pullRef and editorBodyRef
+  const setBodyRef = useCallback((el: HTMLDivElement | null) => {
+    (pullRef as React.MutableRefObject<HTMLDivElement | null>).current = el;
+    (editorBodyRef as React.MutableRefObject<HTMLDivElement | null>).current = el;
+  }, [pullRef]);
 
   // Auto-grow ticker on mount and when activeNote changes
   useEffect(() => {
@@ -401,7 +414,17 @@ export function Editor({ onCopy, onDelete, onSave }: EditorProps) {
           <button className={`fmt-btn fmt-btn-save ${isDirty() ? 'fmt-btn-dirty' : ''}`} title="Save note (Ctrl+S)" onClick={async () => { await saveCurrentNote(); onSave(); }}>{isDirty() ? 'Save •' : 'Saved'}</button>
         </div>
       </div>
-      <div className="editor-body">
+      <div className="editor-body" ref={setBodyRef}>
+        {/* Pull-to-refresh indicator (mobile only) */}
+        <div className={`pull-refresh-indicator ${pullState !== 'idle' ? 'visible' : ''}`}>
+          {pullState === 'refreshing' ? (
+            <><span className="spinner" /> Refreshing...</>
+          ) : pullState === 'ready' ? (
+            'Release to refresh'
+          ) : (
+            'Pull to refresh'
+          )}
+        </div>
         {previewMode ? (
           <div
             className="editor-preview"

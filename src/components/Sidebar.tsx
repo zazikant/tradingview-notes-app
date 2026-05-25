@@ -1,7 +1,8 @@
 'use client';
 
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { useNotes } from '@/hooks/useNotes';
+import { usePullToRefresh } from '@/hooks/usePullToRefresh';
 import { PALETTE, Tag } from '@/types';
 
 interface SidebarProps {
@@ -29,6 +30,26 @@ export function Sidebar({ onOpenRenameTag, onOpenDeleteTag }: SidebarProps) {
   const [newTagName, setNewTagName] = useState('');
   const [selectedNewColor, setSelectedNewColor] = useState(0);
   const [tagSearch, setTagSearch] = useState('');
+  const sidebarRef = useRef<HTMLElement>(null);
+
+  // Pull-to-refresh support
+  const { containerRef: pullRef, pullState } = usePullToRefresh(70, () => {
+    window.location.reload();
+  });
+
+  // Merge pullRef and sidebarRef
+  const setSidebarRef = useCallback((el: HTMLElement | null) => {
+    (pullRef as React.MutableRefObject<HTMLDivElement | null>).current = el as any;
+    (sidebarRef as React.MutableRefObject<HTMLElement | null>).current = el;
+  }, [pullRef]);
+
+  // Expose scroll-to-top for parent
+  useEffect(() => {
+    const el = sidebarRef.current;
+    if (el) {
+      (el as any).__scrollToTop = () => { el.scrollTop = 0; };
+    }
+  }, []);
 
   // Handle adding a new tag
   const handleAddTag = useCallback(() => {
@@ -62,7 +83,17 @@ export function Sidebar({ onOpenRenameTag, onOpenDeleteTag }: SidebarProps) {
   }, [setCustomRange]);
 
   return (
-    <aside className="sidebar">
+    <aside className="sidebar" ref={setSidebarRef} style={{ position: 'relative' }}>
+      {/* Pull-to-refresh indicator (mobile only) */}
+      <div className={`pull-refresh-indicator ${pullState !== 'idle' ? 'visible' : ''}`}>
+        {pullState === 'refreshing' ? (
+          <><span className="spinner" /> Refreshing...</>
+        ) : pullState === 'ready' ? (
+          'Release to refresh'
+        ) : (
+          'Pull to refresh'
+        )}
+      </div>
       {/* Date filters */}
       <div className="sidebar-section">
         <div className="sidebar-label">Date</div>

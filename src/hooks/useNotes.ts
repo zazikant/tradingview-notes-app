@@ -3,7 +3,7 @@
 import { useCallback, useRef } from 'react';
 import { useAppContext } from '@/context/AppContext';
 import { Note, Tag, AppState } from '@/types';
-import { uid, fullDate } from '@/lib/utils';
+import { uid, fullDate, exportNotesToCSV } from '@/lib/utils';
 import { saveNotes } from '@/lib/storage';
 
 export function useNotes() {
@@ -107,6 +107,10 @@ export function useNotes() {
     [state.activeId, state.notes, dispatch]
   );
 
+  const exportAllNotes = useCallback(() => {
+    exportNotesToCSV(state.notes, state.tags);
+  }, [state.notes, state.tags]);
+
   return {
     notes: state.notes,
     tags: state.tags,
@@ -146,6 +150,7 @@ export function useNotes() {
     addTag: (tag: Tag) => dispatch({ type: 'ADD_TAG', payload: tag }),
     updateTag: (tag: Tag) => dispatch({ type: 'UPDATE_TAG', payload: tag }),
     deleteTag: (tagId: string) => dispatch({ type: 'DELETE_TAG', payload: tagId }),
+    exportAllNotes,
     countFor,
   };
 }

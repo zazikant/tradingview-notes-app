@@ -8,7 +8,7 @@ interface TopbarProps {
 }
 
 export function Topbar({ onDelete, onNew }: TopbarProps) {
-  const { searchQuery, setSearchQuery, mobilePanel, setMobilePanel } = useNotes();
+  const { searchQuery, setSearchQuery, mobilePanel, setMobilePanel, exportAllNotes } = useNotes();
 
   const handleMobileBack = () => {
     if (mobilePanel === 'editor') {
@@ -39,6 +39,9 @@ export function Topbar({ onDelete, onNew }: TopbarProps) {
       <div className="topbar-actions">
         <button className="btn btn-ghost" onClick={onDelete}>
           Delete
+        </button>
+        <button className="btn btn-ghost" onClick={exportAllNotes} title="Export all notes as CSV">
+          Export CSV
         </button>
         <button className="btn btn-primary" onClick={onNew}>
           + New note

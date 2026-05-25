@@ -1,3 +1,5 @@
+import { Note, Tag } from '@/types';
+
 export function uid(): string {
   return Math.random().toString(36).slice(2) + Date.now().toString(36);
 }
@@ -60,4 +62,23 @@ export function startOfYear(ts: number): number {
   d.setHours(0, 0, 0, 0);
   d.setMonth(0, 1);
   return d.getTime();
+}
+
+export function exportNotesToCSV(notes: Note[], tags: Tag[]): void {
+  const tagMap = new Map(tags.map(t => [t.id, t.name]));
+  const headers = ['Ticker', 'Date', 'Tags', 'Body'];
+  const rows = notes.map(note => {
+    const tagNames = note.tags.map(id => tagMap.get(id) || id).join('; ');
+    const date = fullDate(note.created);
+    const body = note.body.replace(/"/g, '""');
+    return [note.ticker, date, tagNames, `"${body}"`].join(',');
+  });
+  const csv = [headers.join(','), ...rows].join('\n');
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = `tv-notes-${Date.now()}.csv`;
+  link.click();
+  URL.revokeObjectURL(url);
 }

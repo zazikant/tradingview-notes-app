@@ -136,10 +136,19 @@ export function useNotes() {
     if (lines.length < 2) return 0;
     const keysToDelete = new Set<string>();
     for (let i = 1; i < lines.length; i++) {
-      const parts = lines[i].split(',');
+      const line = lines[i];
+      if (!line.trim()) continue;
+      const parts = parseCSVLine(line);
       if (parts.length < 4) continue;
-      const ticker = parts[0].trim().toUpperCase();
-      const body = parts[3].replace(/""/g, '"').trim();
+      let ticker: string;
+      let body: string;
+      if (parts.length >= 5) {
+        ticker = parts[0].trim().toUpperCase();
+        body = parts[4].replace(/""/g, '"').trim();
+      } else {
+        ticker = parts[0].trim().toUpperCase();
+        body = parts[3].replace(/""/g, '"').trim();
+      }
       keysToDelete.add(`${ticker}:${body}`);
     }
     const toDelete = state.notes.filter(n => keysToDelete.has(`${n.ticker}:${n.body}`));

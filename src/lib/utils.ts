@@ -80,9 +80,20 @@ export function parseNotesFromCSV(csv: string, existingTags: Tag[], existingNote
     const parts = parseCSVLine(line);
     if (parts.length < 4) continue;
 
-    const ticker = parts[0].trim().toUpperCase();
-    const tagStr = parts[2].trim();
-    const body = parts[3].replace(/""/g, '"').trim();
+    let ticker: string;
+    let tagStr: string;
+    let body: string;
+
+    if (parts.length >= 5) {
+      ticker = parts[0].trim().toUpperCase();
+      tagStr = parts[3].trim();
+      body = parts[4].replace(/""/g, '"').trim();
+    } else {
+      ticker = parts[0].trim().toUpperCase();
+      tagStr = parts[2].trim();
+      body = parts[3].replace(/""/g, '"').trim();
+    }
+
     const noteTags: string[] = [];
 
     tagStr.split(';').map(t => t.trim()).filter(Boolean).forEach(name => {

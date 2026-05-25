@@ -555,6 +555,30 @@ body {
     z-index: 100;
     flex-shrink: 0;
     margin-top: auto;
+    visibility: visible;
+    opacity: 1;
+    transform: none;
+  }
+  .word-count {
+    font-family: var(--font-syne), 'Syne', sans-serif;
+    font-size: 12px;
+    color: var(--muted);
+    min-width: 60px;
+    visibility: visible;
+  }
+  .editor-actions {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+    visibility: visible;
+    opacity: 1;
+  }
+  .editor-actions .btn {
+    padding: 10px 18px;
+    font-size: 14px;
+    min-width: 70px;
+    visibility: visible;
+    opacity: 1;
   }
 
   /* Bottom nav visible */

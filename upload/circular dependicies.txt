@@ -1,0 +1,85 @@
+# Circular Dependencies Translator
+
+**Endpoint:** `https://ax-opencode-translator.vercel.app/api/translate`
+
+**Purpose:** Convert telegraphic notes (fragmented, bullet-point notes) into a structured document with logical flow, argumentative connectives, and proper circular dependency removal.
+
+---
+
+## The Problem with Inline PowerShell Commands
+
+Calling complex PowerShell commands via `-Command` parameter causes escaping issues:
+- Nested JSON with special characters breaks parsing
+- Quotes within quotes cause truncation
+- Equals signs get misinterpreted
+
+**Solution:** Use PS1 script file approach for reliability.
+
+---
+
+## Usage Pattern
+
+### Step 1: Write script to current directory
+
+```powershell
+# script.ps1 (in current directory)
+$body = @{
+    text = "Convert telegraphic notes into a structured, circular dependicies removal. Preserve Facts, headings, subheadings, bullet points. Add Argumentative connectives and logical flow. Style polished.`n`nInput:`n`nYOUR NOTES HERE"
+    sourceLanguage = "en"
+    targetLanguage = "en"
+    fast = $true
+} | ConvertTo-Json
+
+$headers = @{"Content-Type" = "application/json"}
+$response = Invoke-RestMethod -Uri "https://ax-opencode-translator.vercel.app/api/translate" -Method POST -Headers $headers -Body $body
+
+$response.translatedText
+```
+
+### Step 2: Run via -File parameter
+
+```powershell
+powershell -ExecutionPolicy Bypass -File "script.ps1"
+```
+
+---
+
+## Cleanup (Run at end of session)
+
+```powershell
+Remove-Item "script.ps1" -Force -ErrorAction SilentlyContinue
+```
+
+---
+
+## Why This Works
+
+1. **No escaping** - File content parsed directly, no shell interpolation
+2. **No quotes in quotes** - JSON strings stay intact
+3. **No special character issues** - PowerShell reads raw file content
+4. **Reusable** - Overwrite script.ps1 for each new task
+5. **Path independent** - Works from any directory
+
+---
+
+## When to Use
+
+| Complexity | Approach |
+|------------|----------|
+| Simple query (no JSON) | Inline `-Command` acceptable |
+| Complex JSON payload | **Always use -File** |
+| Multi-step pipeline | **Always use -File** |
+
+---
+
+## Main Prompt (For reference)
+
+```
+Convert telegraphic notes into a structured, circular dependicies removal. Preserve Facts, headings, subheadings, bullet points. Add Argumentative connectives and logical flow. Style polished.
+
+Input:
+
+<YOUR NOTES HERE>
+```
+
+Replace `<YOUR NOTES HERE>` with your notes. Keep the prompt text as-is.

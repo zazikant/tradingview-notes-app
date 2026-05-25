@@ -242,17 +242,18 @@ export default function Home() {
           if (e.target === e.currentTarget) setShowDeleteModal(false);
         }}
       >
-        <div className="modal-box">
+        <div className="modal-box modal-delete-box">
+          <div className="modal-delete-icon">⚠️</div>
           <div className="modal-title">Delete this note?</div>
           <div className="modal-msg">
-            &quot;{tickerToDelete}&quot; will be permanently deleted. This cannot be undone.
+            &quot;{tickerToDelete}&quot; will be permanently deleted. This action cannot be undone.
           </div>
           <div className="modal-actions">
-            <button className="btn btn-ghost" onClick={() => setShowDeleteModal(false)}>
+            <button className="btn btn-ghost modal-btn-cancel" onClick={() => setShowDeleteModal(false)}>
               Cancel
             </button>
-            <button className="btn btn-danger" onClick={handleConfirmDelete}>
-              Delete
+            <button className="btn btn-danger modal-btn-confirm-delete" onClick={handleConfirmDelete}>
+              Yes, Delete
             </button>
           </div>
         </div>

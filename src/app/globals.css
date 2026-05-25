@@ -717,6 +717,14 @@ body {
 .modal-msg { font-size: 13px; color: var(--muted); margin-bottom: 1.25rem; line-height: 1.5; }
 .modal-actions { display: flex; gap: 8px; justify-content: flex-end; }
 
+/* ── Delete confirmation modal ── */
+.modal-delete-box { text-align: center; }
+.modal-delete-icon { font-size: 36px; margin-bottom: 8px; }
+.modal-delete-box .modal-title { color: #c0392b; }
+.modal-delete-box .modal-actions { justify-content: center; flex-direction: column-reverse; gap: 8px; }
+.modal-btn-confirm-delete { width: 100%; padding: 12px; font-size: 14px; font-weight: 700; border-radius: 8px; }
+.modal-btn-cancel { width: 100%; padding: 10px; font-size: 13px; }
+
 
 /* ── Rename tag modal ── */
 .rename-input {

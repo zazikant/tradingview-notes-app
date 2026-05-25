@@ -497,19 +497,10 @@ body {
     height: 100%;
     transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
     border: none;
-    overflow: hidden;
   }
-  .editor-panel { overflow: hidden; }
-
-  .sidebar,
-  .notes-panel,
   .editor-panel {
-    position: absolute;
-    top: 0; left: 0; right: 0; bottom: 0;
-    width: 100%;
-    height: 100%;
-    transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-    border: none;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
   }
 
 

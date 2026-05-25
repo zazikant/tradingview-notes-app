@@ -33,10 +33,12 @@ function appReducer(state: AppState, action: AppAction): AppState {
       };
     case 'DELETE_NOTE': {
       const remaining = state.notes.filter(n => n.id !== action.payload);
+      const newActiveId = remaining.length > 0 ? remaining[0].id : null;
+      console.log('DELETE_NOTE:', { removed: action.payload, remaining: remaining.length, newActiveId });
       return {
         ...state,
         notes: remaining,
-        activeId: remaining.length > 0 ? remaining[0].id : null,
+        activeId: newActiveId,
       };
     }
     case 'SET_ACTIVE_ID':

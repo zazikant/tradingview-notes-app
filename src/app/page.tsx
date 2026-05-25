@@ -5,6 +5,7 @@ import { Topbar } from '@/components/Topbar';
 import { Sidebar } from '@/components/Sidebar';
 import { NotesPanel } from '@/components/NotesPanel';
 import { Editor } from '@/components/Editor';
+import { MobileEditorFooter } from '@/components/MobileEditorFooter';
 import { ToastManager, showToast } from '@/components/Toast';
 import { useNotes } from '@/hooks/useNotes';
 import { uid, fullDate } from '@/lib/utils';
@@ -177,6 +178,7 @@ export default function Home() {
         />
         <NotesPanel />
         <Editor onCopy={handleCopy} onDelete={handleDelete} onSave={handleSave} />
+        <MobileEditorFooter onCopy={handleCopy} onDelete={handleDelete} onSave={handleSave} />
       </div>
 
       {/* Mobile Bottom Nav */}

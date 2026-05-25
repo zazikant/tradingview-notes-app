@@ -121,8 +121,19 @@ export function subscribeToTags(callback: (tags: Tag[]) => void): () => void {
 }
 
 export async function seedIfEmpty(): Promise<void> {
+  const { data } = await supabase
+    .from('seed_status')
+    .select('seeded_at')
+    .eq('id', 'global')
+    .single();
+
+  if (data && data.seeded_at > 0) return;
+
   const existing = await loadNotes();
-  if (existing.length > 0) return;
+  if (existing.length > 0) {
+    await supabase.from('seed_status').update({ seeded_at: 1 }).eq('id', 'global');
+    return;
+  }
 
   const now = Date.now();
   const seedNotes = [
@@ -148,4 +159,6 @@ export async function seedIfEmpty(): Promise<void> {
   for (const tag of seedTags) {
     await addTag(tag);
   }
+
+  await supabase.from('seed_status').update({ seeded_at: Date.now() }).eq('id', 'global');
 }

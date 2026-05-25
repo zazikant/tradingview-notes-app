@@ -533,16 +533,14 @@ body {
   /* Bottom padding so content isn't hidden behind nav */
   .sidebar, .notes-panel { padding-bottom: 64px; }
   .editor-panel {
-    padding-bottom: 0;
+    padding-bottom: 60px;
   }
   .editor-panel .editor-body {
     padding-bottom: 1rem;
   }
   .editor-panel .editor-footer {
-    position: fixed;
-    bottom: 60px;
-    left: 0;
-    right: 0;
+    position: sticky;
+    bottom: 0;
     width: 100%;
     padding: 12px 16px;
     min-height: 60px;

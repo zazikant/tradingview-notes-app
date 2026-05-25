@@ -35,7 +35,6 @@ export function Editor({ onCopy, onDelete, onSave }: EditorProps) {
         <input
           className="editor-ticker-input"
           placeholder="TICKER"
-          maxLength={10}
           value={activeNote.ticker}
           onChange={e => {
             updateCurrentNote({ ticker: e.target.value.toUpperCase() });

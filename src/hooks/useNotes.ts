@@ -111,11 +111,12 @@ export function useNotes() {
     exportNotesToCSV(state.notes, state.tags);
   }, [state.notes, state.tags]);
 
-  const importNotesFromCSV = useCallback((csv: string) => {
-    const { notes: newNotes, newTags } = parseNotesFromCSV(csv, state.tags);
+  const importNotesFromCSV = useCallback((csv: string): number => {
+    const { notes: newNotes, newTags, skipped } = parseNotesFromCSV(csv, state.tags, state.notes);
     newTags.forEach(tag => dispatch({ type: 'ADD_TAG', payload: tag }));
     newNotes.forEach(note => dispatch({ type: 'ADD_NOTE', payload: note }));
-  }, [state.tags, dispatch]);
+    return skipped;
+  }, [state.tags, state.notes, dispatch]);
 
   return {
     notes: state.notes,

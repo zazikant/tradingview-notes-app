@@ -64,11 +64,12 @@ export function startOfYear(ts: number): number {
   return d.getTime();
 }
 
-export function parseNotesFromCSV(csv: string, existingTags: Tag[]): { notes: Note[]; newTags: Tag[] } {
+export function parseNotesFromCSV(csv: string, existingTags: Tag[], existingNotes: Note[]): { notes: Note[]; newTags: Tag[]; skipped: number } {
   const lines = csv.split(/\r?\n/).filter(l => l.trim());
-  if (lines.length < 2) return { notes: [], newTags: [] };
+  if (lines.length < 2) return { notes: [], newTags: [], skipped: 0 };
 
   const tagNameToId = new Map(existingTags.map(t => [t.name.toLowerCase(), t.id]));
+  const existingKeys = new Set(existingNotes.map(n => `${n.ticker}:${n.body}`));
   const tagNames = new Set<string>();
   const notes: Note[] = [];
 
@@ -93,6 +94,10 @@ export function parseNotesFromCSV(csv: string, existingTags: Tag[]): { notes: No
       }
     });
 
+    const key = `${ticker}:${body}`;
+    if (existingKeys.has(key)) continue;
+    existingKeys.add(key);
+
     notes.push({
       id: uid(),
       ticker,
@@ -108,7 +113,7 @@ export function parseNotesFromCSV(csv: string, existingTags: Tag[]): { notes: No
     color: Math.floor(Math.random() * 10),
   }));
 
-  return { notes, newTags };
+  return { notes, newTags, skipped: lines.length - 1 - notes.length };
 }
 
 function parseCSVLine(line: string): string[] {

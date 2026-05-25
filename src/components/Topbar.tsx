@@ -2,6 +2,7 @@
 
 import { useRef } from 'react';
 import { useNotes } from '@/hooks/useNotes';
+import { ToastManager, showToast } from '@/components/Toast';
 
 interface TopbarProps {
   onDelete: () => void;
@@ -22,7 +23,12 @@ export function Topbar({ onDelete, onNew }: TopbarProps) {
     const reader = new FileReader();
     reader.onload = (event) => {
       const csv = event.target?.result as string;
-      importNotesFromCSV(csv);
+      const skipped = importNotesFromCSV(csv);
+      if (skipped > 0) {
+        showToast(`Imported - ${skipped} duplicate(s) skipped`);
+      } else {
+        showToast('Notes imported');
+      }
     };
     reader.readAsText(file);
     e.target.value = '';

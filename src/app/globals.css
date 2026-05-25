@@ -552,14 +552,12 @@ body {
   .notes-panel,
   .editor-panel {
     position: absolute;
-    top: 0; left: 0; right: 0; bottom: 0;
+    top: 0; left: 0; right: 0; bottom: 60px;
     width: 100%;
-    height: calc(100dvh - var(--topbar));
     transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
     border: none;
   }
   .editor-panel {
-    height: 100%;
     display: flex;
     flex-direction: column;
     -webkit-overflow-scrolling: touch;
@@ -589,8 +587,7 @@ body {
   /* Sidebar scrollable */
   .sidebar { overflow-y: auto; }
 
-  /* Bottom padding so content isn't hidden behind nav */
-  .sidebar, .notes-panel { padding-bottom: 64px; }
+  /* No bottom padding needed — panels stop above mobile nav (bottom: 60px) */
 
   /* Bottom nav visible */
   .mobile-nav { display: flex; }
@@ -618,6 +615,7 @@ body {
     min-height: 0;
     overflow: hidden;
     position: relative;
+    /* bottom: 60px on .editor-panel ensures this doesn't go behind nav */
   }
   .editor-textarea { font-size: 16px; padding: 1rem; } /* prevent iOS zoom */
   .editor-preview { font-size: 16px; padding: 1rem; }

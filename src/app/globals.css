@@ -405,6 +405,9 @@ body {
 .editor-body { flex: 1; overflow-y: auto; padding: 1.5rem; }
 .editor-textarea { width: 100%; height: 100%; min-height: 300px; background: transparent; border: none; outline: none; font-family: var(--font-epilogue), 'Epilogue', sans-serif; font-size: 15px; line-height: 1.8; color: var(--text); resize: none; }
 .editor-textarea::placeholder { color: var(--border); }
+.editor-format-bar { display: flex; gap: 4px; padding: 0.5rem 1.5rem; border-bottom: 1px solid var(--border); }
+.fmt-btn { background: var(--surface2); border: 1px solid var(--border); border-radius: 4px; padding: 4px 10px; font-size: 13px; cursor: pointer; color: var(--text); }
+.fmt-btn:hover { background: var(--border); }
 .editor-footer { padding: 0.75rem 1.5rem; border-top: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; }
 .word-count { font-family: var(--font-syne), 'Syne', sans-serif; font-size: 11px; color: var(--muted); }
 .editor-actions { display: flex; gap: 8px; }
@@ -596,6 +599,7 @@ body {
     overflow-y: auto;
     -webkit-overflow-scrolling: touch;
   }
+  .editor-format-bar { padding: 0.5rem 1rem; }
   .editor-textarea { font-size: 16px; } /* prevent iOS zoom */
 
   .word-count {

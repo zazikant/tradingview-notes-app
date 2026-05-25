@@ -28,6 +28,7 @@ export function Sidebar({ onOpenRenameTag, onOpenDeleteTag }: SidebarProps) {
   const [showAddTagForm, setShowAddTagForm] = useState(false);
   const [newTagName, setNewTagName] = useState('');
   const [selectedNewColor, setSelectedNewColor] = useState(0);
+  const [tagSearch, setTagSearch] = useState('');
 
   // Handle adding a new tag
   const handleAddTag = useCallback(() => {
@@ -207,8 +208,31 @@ export function Sidebar({ onOpenRenameTag, onOpenDeleteTag }: SidebarProps) {
         </div>
       </div>
 
+      {/* Tag search */}
+      <div style={{ padding: '0 1rem 0.5rem' }}>
+        <input
+          type="text"
+          placeholder="Search tags…"
+          value={tagSearch}
+          onChange={e => setTagSearch(e.target.value)}
+          style={{
+            width: '100%',
+            background: 'var(--surface2)',
+            border: '1px solid var(--border)',
+            borderRadius: '6px',
+            padding: '5px 8px',
+            fontFamily: 'var(--font-epilogue), Epilogue, sans-serif',
+            fontSize: '12px',
+            color: 'var(--text)',
+            outline: 'none',
+          }}
+        />
+      </div>
+
       <div className="tag-list">
-        {tags.map(tag => {
+        {tags
+          .filter(tag => tag.name.toLowerCase().includes(tagSearch.toLowerCase()))
+          .map(tag => {
           const c = PALETTE[tag.color] || PALETTE[0];
           const isActive = activeTagFilters.has(tag.id);
           return (

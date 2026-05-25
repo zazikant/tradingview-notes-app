@@ -472,7 +472,6 @@ body {
 
   body { overflow: hidden; height: 100vh; }
 
-
   /* Topbar mobile */
   .topbar { padding: 0 0.875rem; gap: 8px; }
   .logo { font-size: 14px; }
@@ -488,6 +487,19 @@ body {
     height: calc(100vh - var(--topbar));
     flex: 1;
   }
+
+  .sidebar,
+  .notes-panel,
+  .editor-panel {
+    position: absolute;
+    top: 0; left: 0; right: 0; bottom: 0;
+    width: 100%;
+    height: 100%;
+    transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    border: none;
+    overflow: hidden;
+  }
+  .editor-panel { overflow: hidden; }
 
   .sidebar,
   .notes-panel,
@@ -526,7 +538,32 @@ body {
 
   /* Bottom padding so content isn't hidden behind nav */
   .sidebar, .notes-panel { padding-bottom: 64px; }
-  .editor-panel .editor-footer { padding-bottom: calc(0.75rem + 64px); }
+  .editor-panel {
+    padding-bottom: 0;
+  }
+  .editor-panel .editor-body {
+    padding-bottom: calc(1rem + 60px);
+  }
+  .editor-panel .editor-footer {
+    position: absolute;
+    bottom: 60px;
+    left: 0;
+    right: 0;
+    padding: 0.75rem 1rem;
+    padding-left: max(1rem, env(safe-area-inset-left));
+    padding-right: max(1rem, env(safe-area-inset-right));
+    padding-bottom: max(0.75rem, calc(0.75rem + env(safe-area-inset-bottom)));
+    min-height: 52px;
+    background: var(--surface);
+    border-top: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 8px;
+    box-shadow: 0 -2px 8px rgba(0,0,0,0.06);
+    z-index: 10;
+  }
 
   /* Bottom nav visible */
   .mobile-nav { display: flex; }
@@ -551,19 +588,9 @@ body {
   .editor-tags-bar { padding: 0.5rem 1rem; }
   .editor-body { padding: 1rem; overflow-y: auto; }
   .editor-textarea { font-size: 16px; } /* prevent iOS zoom */
-  .editor-footer {
-    padding: 0.75rem 1rem;
-    min-height: 52px;
-    flex-shrink: 0;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    flex-wrap: wrap;
-    gap: 8px;
-  }
+
   .word-count { font-family: var(--font-syne), 'Syne', sans-serif; font-size: 11px; color: var(--muted); }
   .editor-actions { display: flex; gap: 8px; flex-wrap: wrap; }
-
 
   .mobile-delete-btn { display: inline-flex; }
 

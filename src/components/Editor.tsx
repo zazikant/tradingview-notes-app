@@ -159,6 +159,81 @@ export function Editor({ onCopy, onDelete, onSave }: EditorProps) {
   }, [updateCurrentNote, scheduleAutoSave]);
 
   const handleEditorKeyDown = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    const ta = textareaRef.current;
+
+    // ── Enter key: auto-continue lists ──
+    if (e.key === 'Enter' && !e.metaKey && !e.ctrlKey && !e.altKey && ta) {
+      const value = ta.value;
+      const cursorPos = ta.selectionStart;
+      // Find the start of the current line
+      const lineStart = value.lastIndexOf('\n', cursorPos - 1) + 1;
+      const currentLine = value.substring(lineStart, cursorPos);
+
+      // Match numbered list: e.g. "1. " or "12. "
+      const numberedMatch = currentLine.match(/^(\d+)\.\s+/);
+      if (numberedMatch) {
+        const prefix = numberedMatch[0];
+        // If the line is ONLY the prefix (no content), remove it and exit list
+        if (currentLine.trim() === prefix.trim()) {
+          e.preventDefault();
+          const before = value.substring(0, lineStart);
+          const after = value.substring(cursorPos);
+          const newText = before + '\n' + after;
+          updateCurrentNote({ body: newText });
+          scheduleAutoSave();
+          setTimeout(() => {
+            ta.selectionStart = ta.selectionEnd = before.length + 1;
+          }, 0);
+          return;
+        }
+        // Continue with next number
+        const nextNum = parseInt(numberedMatch[1], 10) + 1;
+        const nextPrefix = `${nextNum}. `;
+        e.preventDefault();
+        const before = value.substring(0, cursorPos);
+        const after = value.substring(cursorPos);
+        const newText = before + '\n' + nextPrefix + after;
+        updateCurrentNote({ body: newText });
+        scheduleAutoSave();
+        setTimeout(() => {
+          const newPos = before.length + 1 + nextPrefix.length;
+          ta.selectionStart = ta.selectionEnd = newPos;
+        }, 0);
+        return;
+      }
+
+      // Match bullet list: "- " or "* "
+      const bulletMatch = currentLine.match(/^[-*]\s+/);
+      if (bulletMatch) {
+        const prefix = bulletMatch[0];
+        // If the line is ONLY the bullet prefix (no content), remove it and exit list
+        if (currentLine.trim() === prefix.trim()) {
+          e.preventDefault();
+          const before = value.substring(0, lineStart);
+          const after = value.substring(cursorPos);
+          const newText = before + '\n' + after;
+          updateCurrentNote({ body: newText });
+          scheduleAutoSave();
+          setTimeout(() => {
+            ta.selectionStart = ta.selectionEnd = before.length + 1;
+          }, 0);
+          return;
+        }
+        // Continue with same bullet prefix
+        e.preventDefault();
+        const before = value.substring(0, cursorPos);
+        const after = value.substring(cursorPos);
+        const newText = before + '\n' + prefix + after;
+        updateCurrentNote({ body: newText });
+        scheduleAutoSave();
+        setTimeout(() => {
+          const newPos = before.length + 1 + prefix.length;
+          ta.selectionStart = ta.selectionEnd = newPos;
+        }, 0);
+        return;
+      }
+    }
+
     // Bold: Ctrl+Shift+B or Ctrl+B
     if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key === 'B') {
       e.preventDefault();
@@ -193,7 +268,7 @@ export function Editor({ onCopy, onDelete, onSave }: EditorProps) {
       applyBulletList();
       return;
     }
-  }, [applyBold, applyItalic, applyList, applyBulletList]);
+  }, [applyBold, applyItalic, applyList, applyBulletList, updateCurrentNote, scheduleAutoSave]);
 
   // Word count
   const wordCount = activeNote?.body.trim()
@@ -338,7 +413,7 @@ export function Editor({ onCopy, onDelete, onSave }: EditorProps) {
           <textarea
             ref={textareaRef}
             className="editor-textarea"
-            placeholder="Write your analysis, observations, trade rationale…&#10;&#10;Formatting: **bold**, _italic_, ~~strikethrough~~&#10;Ctrl+B = Bold | Ctrl+I = Italic | Ctrl+Shift+L = Numbered list"
+            placeholder="Write your analysis, observations, trade rationale…&#10;&#10;Formatting: **bold**, _italic_, ~~strikethrough~~&#10;1. or - then Enter = auto-continue list&#10;Ctrl+B = Bold | Ctrl+I = Italic | Ctrl+Shift+L = Numbered list"
             value={activeNote.body}
             onChange={e => {
               updateCurrentNote({ body: e.target.value });

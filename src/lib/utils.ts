@@ -65,7 +65,7 @@ export function startOfYear(ts: number): number {
 }
 
 export function parseNotesFromCSV(csv: string, existingTags: Tag[]): { notes: Note[]; newTags: Tag[] } {
-  const lines = csv.split('\n').filter(l => l.trim());
+  const lines = csv.split(/\r?\n/).filter(l => l.trim());
   if (lines.length < 2) return { notes: [], newTags: [] };
 
   const tagNameToId = new Map(existingTags.map(t => [t.name.toLowerCase(), t.id]));
@@ -146,7 +146,7 @@ export function exportNotesToCSV(notes: Note[], tags: Tag[]): void {
     const body = note.body.replace(/"/g, '""');
     return [note.ticker, date, tagNames, `"${body}"`].join(',');
   });
-  const csv = [headers.join(','), ...rows].join('\n');
+  const csv = [headers.join(','), ...rows].join('\r\n');
   const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');

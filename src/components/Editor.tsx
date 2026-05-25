@@ -35,7 +35,7 @@ export function Editor({ onCopy, onDelete, onSave }: EditorProps) {
 
   return (
     <div className="editor-panel">
-      <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
         <div className="editor-topbar">
           <input
             className="editor-ticker-input"
@@ -78,7 +78,7 @@ export function Editor({ onCopy, onDelete, onSave }: EditorProps) {
             );
           })}
         </div>
-        <div className="editor-body">
+        <div className="editor-body" style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
           <textarea
             className="editor-textarea"
             placeholder="Write your analysis, observations, trade rationale…"
@@ -87,6 +87,7 @@ export function Editor({ onCopy, onDelete, onSave }: EditorProps) {
               updateCurrentNote({ body: e.target.value });
               scheduleAutoSave();
             }}
+            style={{ flex: 1, overflowY: 'auto', minHeight: 0, WebkitOverflowScrolling: 'touch' }}
           />
         </div>
         <div className="editor-footer">

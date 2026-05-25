@@ -3,7 +3,6 @@
 import { useRef } from 'react';
 import { useNotes } from '@/hooks/useNotes';
 import { ToastManager, showToast } from '@/components/Toast';
-import { parseNotesFromCSV } from '@/lib/utils';
 
 interface TopbarProps {
   onDelete: () => void;
@@ -23,21 +22,21 @@ export function Topbar({ onDelete, onNew }: TopbarProps) {
     deleteInputRef.current?.click();
   };
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>, isDelete: boolean) => {
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>, isDelete: boolean) => {
     const file = e.target.files?.[0];
     if (!file) return;
     const reader = new FileReader();
-    reader.onload = (event) => {
+    reader.onload = async (event) => {
       const csv = event.target?.result as string;
       if (isDelete) {
-        const count = deleteMatchingNotes(csv);
+        const count = await deleteMatchingNotes(csv);
         if (count > 0) {
           showToast(`Deleted ${count} matching note(s)`);
         } else {
           showToast('No matching notes to delete');
         }
       } else {
-        const skipped = importNotesFromCSV(csv);
+        const skipped = await importNotesFromCSV(csv);
         if (skipped > 0) {
           showToast(`Imported - ${skipped} duplicate(s) skipped`);
         } else {

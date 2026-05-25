@@ -2,8 +2,7 @@
 
 import React, { createContext, useContext, useReducer, useEffect, useCallback, useRef } from 'react';
 import { AppState, AppAction, Note, Tag, PALETTE } from '@/types';
-import { loadNotes, saveNotes, loadTags, saveTags, createSeedNotes } from '@/lib/storage';
-import { uid } from '@/lib/utils';
+import { loadNotes, loadTags, seedIfEmpty, startPolling } from '@/lib/convex';
 
 const initialState: AppState = {
   notes: [],
@@ -91,7 +90,6 @@ function appReducer(state: AppState, action: AppAction): AppState {
 interface AppContextValue {
   state: AppState;
   dispatch: React.Dispatch<AppAction>;
-  // Helper functions
   getFilteredNotes: () => Note[];
   getTag: (id: string) => Tag | undefined;
   getTagColor: (id: string) => typeof PALETTE[number];
@@ -102,34 +100,30 @@ const AppContext = createContext<AppContextValue | null>(null);
 
 export function AppProvider({ children }: { children: React.ReactNode }) {
   const [state, dispatch] = useReducer(appReducer, initialState);
-  const autoSaveTimer = useRef<NodeJS.Timeout | null>(null);
+  const initialized = useRef(false);
 
-  // Initialize data from localStorage
   useEffect(() => {
-    let notes = loadNotes();
-    const tags = loadTags();
+    if (initialized.current) return;
+    initialized.current = true;
 
-    if (notes.length === 0) {
-      notes = createSeedNotes();
-      saveNotes(notes);
-    }
+    const init = async () => {
+      await seedIfEmpty();
 
-    dispatch({ type: 'SET_NOTES', payload: notes });
-    dispatch({ type: 'SET_TAGS', payload: tags });
+      const [notes, tags] = await Promise.all([loadNotes(), loadTags()]);
+      dispatch({ type: 'SET_NOTES', payload: notes });
+      dispatch({ type: 'SET_TAGS', payload: tags });
+
+      const poll = async () => {
+        const [newNotes, newTags] = await Promise.all([loadNotes(), loadTags()]);
+        dispatch({ type: 'SET_NOTES', payload: newNotes });
+        dispatch({ type: 'SET_TAGS', payload: newTags });
+      };
+
+      startPolling(poll, 2000);
+    };
+
+    init();
   }, []);
-
-  // Persist notes when they change
-  useEffect(() => {
-    saveNotes(state.notes);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state.notes]);
-
-  // Persist tags when they change
-  useEffect(() => {
-    if (state.tags.length > 0) {
-      saveTags(state.tags);
-    }
-  }, [state.tags]);
 
   const getFilteredNotes = useCallback((): Note[] => {
     const { notes, currentFilter, activeTagFilters, sortMode, searchQuery, customFrom, customTo } = state;
@@ -137,7 +131,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
     let filtered = [...notes];
 
-    // Date filter
     if (currentFilter === 'today') {
       const start = new Date(now);
       start.setHours(0, 0, 0, 0);
@@ -173,14 +166,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       });
     }
 
-    // Tag filter
     if (activeTagFilters.size > 0) {
       filtered = filtered.filter(n =>
         [...activeTagFilters].some(tagId => n.tags.includes(tagId))
       );
     }
 
-    // Search
     if (searchQuery) {
       const q = searchQuery.toLowerCase();
       filtered = filtered.filter(n =>
@@ -188,7 +179,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       );
     }
 
-    // Sort
     if (sortMode === 'newest') {
       filtered.sort((a, b) => b.created - a.created);
     } else if (sortMode === 'oldest') {
@@ -221,7 +211,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     const now = Date.now();
     let filtered = [...notes];
 
-    // Apply date filter only (for count, don't persist)
     if (filter === 'today') {
       const start = new Date(now);
       start.setHours(0, 0, 0, 0);

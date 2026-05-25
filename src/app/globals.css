@@ -602,19 +602,6 @@ body {
   .editor-body { padding: 1rem; }
   .editor-textarea { font-size: 16px; } /* prevent iOS zoom */
 
-  .editor-footer {
-    width: 100%;
-    padding: 12px 16px;
-    min-height: 56px;
-    background: var(--surface);
-    border-top: 1px solid var(--border);
-    display: flex !important;
-    align-items: center;
-    justify-content: space-between;
-    flex-wrap: wrap;
-    gap: 12px;
-    flex-shrink: 0;
-  }
   .word-count {
     font-family: var(--font-syne), 'Syne', sans-serif;
     font-size: 12px;

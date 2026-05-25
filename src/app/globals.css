@@ -471,7 +471,7 @@ body {
 /* ── Read-only preview mode ── */
 .editor-preview-readonly { cursor: default; }
 .editor-preview-readonly::after {
-  content: 'Tap ✎ Edit to make changes';
+  content: 'Read-only · Tap ✎ Edit button to make changes';
   display: block;
   margin-top: 2rem;
   padding-top: 1rem;

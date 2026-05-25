@@ -452,8 +452,6 @@ export function Editor({ onCopy, onDelete, onSave }: EditorProps) {
         ) : (
           <div
             className="editor-preview editor-preview-readonly"
-            onClick={() => setIsEditing(true)}
-            title="Tap Edit to start editing"
             dangerouslySetInnerHTML={{ __html: renderMarkdown(activeNote.body) }}
           />
         )}

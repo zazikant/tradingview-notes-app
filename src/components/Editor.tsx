@@ -457,6 +457,19 @@ export function Editor({ onCopy, onDelete, onSave }: EditorProps) {
         <div className="editor-toolbar-right">
           <span className="toolbar-word-count">{wordCount}w</span>
           {isDirty() && <button className="fmt-btn fmt-btn-discard" title="Discard unsaved changes" onClick={discardChanges}>Discard</button>}
+          <button className="fmt-btn fmt-btn-action" title="Download note as text file" onClick={() => {
+            if (!activeNote) return;
+            const content = `${activeNote.ticker}\n\n${activeNote.body}`;
+            const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `${activeNote.ticker || 'note'}.txt`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+          }}>Download</button>
           <button className="fmt-btn fmt-btn-action" title="Copy note" onClick={onCopy}>Copy</button>
           <button className="fmt-btn fmt-btn-danger" title="Delete note" onClick={onDelete}>Delete</button>
           <button className={`fmt-btn fmt-btn-save ${isDirty() ? 'fmt-btn-dirty' : ''}`} title="Save note (Ctrl+S)" onClick={async () => { await saveCurrentNote(); onSave(); }}>{isDirty() ? 'Save •' : 'Saved'}</button>

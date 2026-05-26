@@ -104,6 +104,9 @@ export function parseNotesFromCSV(csv: string, existingTags: Tag[], existingNote
 
     if (tagStr) {
       tagStr.split(/[;|]/).map(t => t.trim()).filter(Boolean).forEach(name => {
+        // Skip if this looks like a leaked tag ID (e.g. "tag_clocvbddju7mpm7a13n")
+        if (/^tag_[a-z0-9]{10,}$/i.test(name)) return;
+
         const lower = name.toLowerCase();
         if (tagNameToId.has(lower)) {
           noteTags.push(tagNameToId.get(lower)!);
@@ -258,7 +261,8 @@ export function exportNotesToCSV(notes: Note[], tags: Tag[]): void {
   const tagMap = new Map(tags.map(t => [t.id, t.name]));
   const headers = ['Ticker', 'Date', 'Tags', 'Body'];
   const rows = notes.map(note => {
-    const tagNames = note.tags.map(id => tagMap.get(id) || id).join('; ');
+    // Skip tag IDs that no longer exist — don't leak raw IDs into CSV
+    const tagNames = note.tags.map(id => tagMap.get(id)).filter(Boolean).join('; ');
     const date = fullDate(note.created);
     const ticker = note.ticker.replace(/"/g, '""');
     const body = note.body.replace(/"/g, '""');

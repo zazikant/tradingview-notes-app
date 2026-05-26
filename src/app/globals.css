@@ -462,13 +462,6 @@ body {
 .editor-preview h1 { font-family: var(--font-syne), 'Syne', sans-serif; font-size: 22px; font-weight: 700; margin: 1em 0 0.5em; letter-spacing: -0.02em; }
 .editor-preview h2 { font-family: var(--font-syne), 'Syne', sans-serif; font-size: 18px; font-weight: 700; margin: 0.8em 0 0.4em; letter-spacing: -0.01em; }
 .editor-preview h3 { font-family: var(--font-syne), 'Syne', sans-serif; font-size: 15px; font-weight: 700; margin: 0.6em 0 0.3em; }
-.editor-preview ol { margin: 0.5em 0 0.75em 1.5em; padding-left: 0; }
-.editor-preview ul { margin: 0.5em 0 0.75em 1.5em; list-style-type: disc; padding-left: 0; }
-.editor-preview li { margin-bottom: 0.3em; line-height: 1.7; }
-.editor-preview ol > li { list-style-type: decimal; }
-.editor-preview ol ul { margin: 0.3em 0 0.5em 1.2em; list-style-type: circle; }
-.editor-preview ol ul li { list-style-type: circle; }
-.editor-preview li > ul { margin-top: 0.2em; }
 
 /* ── Read-only preview mode ── */
 .editor-preview-readonly { cursor: default; }

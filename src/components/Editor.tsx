@@ -11,153 +11,44 @@ interface EditorProps {
   onSave: () => void;
 }
 
-/** Simple markdown → HTML renderer for preview mode */
+/** Simple markdown → HTML renderer for preview mode
+ *  Keeps the raw text layout (numbers, bullets, indentation) exactly as typed.
+ *  Only applies inline formatting: bold, italic, strikethrough, headings. */
 function renderMarkdown(text: string): string {
   // Apply renumber first so preview always shows clean sequential numbers
   const renumbered = renumberLists(text);
 
-  // Line-by-line parser for robust list handling
   const lines = renumbered.split('\n');
   const output: string[] = [];
 
-  // Track open list contexts
-  let inOrderedList = false;
-  let inUnorderedList = false;
-  let inSubList = false;
-  let openLiForSub = false; // true when a <li> is open waiting for sub-list
-
-  function closeSubList() {
-    if (inSubList) {
-      output.push('</ul>');
-      inSubList = false;
-    }
-    if (openLiForSub) {
-      output.push('</li>');
-      openLiForSub = false;
-    }
-  }
-
-  function closeAllLists() {
-    closeSubList();
-    if (inOrderedList) { output.push('</ol>'); inOrderedList = false; }
-    if (inUnorderedList) { output.push('</ul>'); inUnorderedList = false; }
-  }
-
-  for (let i = 0; i < lines.length; i++) {
-    const rawLine = lines[i];
-
-    // ── Inline formatting on the raw line ──
+  for (const rawLine of lines) {
     let line = rawLine;
     // Escape HTML
     line = line.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-    // Bold
+
+    // Headings: # H1, ## H2, ### H3 (replace the whole line)
+    const headingMatch = rawLine.match(/^(#{1,3})\s+(.+)$/);
+    if (headingMatch) {
+      const level = headingMatch[1].length;
+      const content = line.replace(/^#{1,3}\s+/, '');
+      output.push(`<h${level}>${content}</h${level}>`);
+      continue;
+    }
+
+    // Bold: **text** or __text__
     line = line.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
     line = line.replace(/__(.+?)__/g, '<strong>$1</strong>');
-    // Italic
+    // Italic: *text* or _text_
     line = line.replace(/(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)/g, '<em>$1</em>');
     line = line.replace(/(?<!_)_(?!_)(.+?)(?<!_)_(?!_)/g, '<em>$1</em>');
-    // Strikethrough
+    // Strikethrough: ~~text~~
     line = line.replace(/~~(.+?)~~/g, '<del>$1</del>');
 
-    // ── Classify the original (pre-escape) line ──
-    const headingMatch = rawLine.match(/^#{1,3}\s+/);
-    const orderedMatch = rawLine.match(/^\d+\.\s+/);
-    const subBulletMatch = rawLine.match(/^\s+[-*]\s+/);
-    const topBulletMatch = rawLine.match(/^[-*]\s+/);
-    const isBlank = rawLine.trim() === '';
-
-    // ── Headings ──
-    if (headingMatch) {
-      closeAllLists();
-      const hMatch = rawLine.match(/^(#{1,3})\s+(.+)$/);
-      if (hMatch) {
-        const level = hMatch[1].length;
-        const content = line.replace(/^#{1,3}\s+/, '');
-        output.push(`<h${level}>${content}</h${level}>`);
-      }
-      continue;
-    }
-
-    // ── Ordered list item (e.g. "1. something") ──
-    if (orderedMatch) {
-      if (inUnorderedList) {
-        // Switching from bullet to numbered
-        closeAllLists();
-      }
-      if (!inOrderedList) {
-        output.push('<ol>');
-        inOrderedList = true;
-      }
-      closeSubList(); // close any sub-list from previous item
-      const content = line.replace(/^\d+\.\s+/, '');
-
-      // Check if next line is a sub-bullet
-      const nextLine = i + 1 < lines.length ? lines[i + 1] : '';
-      const hasNextSubBullet = /^\s+[-*]\s+/.test(nextLine);
-
-      if (hasNextSubBullet) {
-        output.push(`<li>${content}`);
-        openLiForSub = true;
-      } else {
-        output.push(`<li>${content}</li>`);
-      }
-      continue;
-    }
-
-    // ── Sub-bullet under a list item (indented - or *) ──
-    if (subBulletMatch) {
-      if (!inOrderedList && !inUnorderedList) {
-        // Orphan sub-bullet — treat as top-level bullet
-        output.push('<ul>');
-        inUnorderedList = true;
-      }
-      if (!inSubList) {
-        output.push('<ul>');
-        inSubList = true;
-      }
-      const content = line.replace(/^\s+[-*]\s+/, '');
-      output.push(`<li>${content}</li>`);
-      continue;
-    }
-
-    // ── Top-level bullet list item ──
-    if (topBulletMatch) {
-      if (inOrderedList) {
-        // Switching from numbered to bullet
-        closeAllLists();
-      }
-      if (!inUnorderedList) {
-        output.push('<ul>');
-        inUnorderedList = true;
-      }
-      closeSubList();
-      const content = line.replace(/^[-*]\s+/, '');
-      output.push(`<li>${content}</li>`);
-      continue;
-    }
-
-    // ── Blank line ──
-    if (isBlank) {
-      closeAllLists();
-      output.push('');
-      continue;
-    }
-
-    // ── Regular text line ──
-    closeAllLists();
     output.push(line);
   }
 
-  closeAllLists();
-
-  // Join lines: double blank line → paragraph break, single newline → <br>
-  // But first, collapse list internals so no extra <br> appears between list elements
+  // Join: double newline → paragraph break, single newline → <br>
   let html = output.join('\n');
-
-  // Remove newlines inside list structures (between tags) to prevent extra <br> gaps
-  html = html.replace(/(<\/(?:ol|ul|li)>)\s+(<(?:ol|ul|li)>)/g, '$1$2');
-  html = html.replace(/(<li>[^<]*)\s+(<\/(?:li|ul|ol)>)/g, '$1$2');
-
   html = html.replace(/\n{2,}/g, '</p><p>');
   html = html.replace(/\n/g, '<br>');
 
@@ -166,8 +57,8 @@ function renderMarkdown(text: string): string {
 
   // Clean up empty paragraphs
   html = html.replace(/<p>\s*<\/p>/g, '');
-  html = html.replace(/<p>\s*(<(?:ol|ul|h[1-3])>)/g, '$1');
-  html = html.replace(/(<\/(?:ol|ul|h[1-3])>)\s*<\/p>/g, '$1');
+  html = html.replace(/<p>\s*(<h[1-3]>)/g, '$1');
+  html = html.replace(/(<\/h[1-3]>)\s*<\/p>/g, '$1');
 
   return html;
 }

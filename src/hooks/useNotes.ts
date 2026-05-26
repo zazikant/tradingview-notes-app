@@ -144,8 +144,8 @@ export function useNotes() {
       const note = state.notes.find(n => n.id === id);
       if (!note) return;
 
-      const tagNames = note.tags.map(t => getTag(t)?.name || t).join(', ');
-      const text = `${note.ticker}\n${fullDate(note.created)}\nTags: ${tagNames}\n\n${note.body}`;
+      const tagNames = note.tags.map(t => getTag(t)?.name).filter(Boolean).join(', ');
+      const text = `${note.ticker}\n${fullDate(note.created)}${tagNames ? `\nTags: ${tagNames}` : ''}\n\n${note.body}`;
       navigator.clipboard.writeText(text);
     },
     [state.notes, getTag]
@@ -178,13 +178,17 @@ export function useNotes() {
 
   const importNotesFromCSV = useCallback(async (csv: string): Promise<number> => {
     const { notes: newNotes, newTags, skipped } = parseNotesFromCSV(csv, state.tags, state.notes);
+    // Add new tags first
     for (const tag of newTags) {
       dispatch({ type: 'ADD_TAG', payload: tag });
       await sbAddTag(tag);
     }
+    // Import notes, stripping any orphaned tag references
+    const validTagIds = new Set([...state.tags, ...newTags].map(t => t.id));
     for (const note of newNotes) {
-      dispatch({ type: 'ADD_NOTE', payload: note });
-      await sbAddNote(note);
+      const cleaned = { ...note, tags: note.tags.filter(id => validTagIds.has(id)) };
+      dispatch({ type: 'ADD_NOTE', payload: cleaned });
+      await sbAddNote(cleaned);
     }
     return skipped;
   }, [state.tags, state.notes, dispatch]);
@@ -261,8 +265,15 @@ export function useNotes() {
       await sbUpdateTag(tag);
     },
     deleteTag: async (tagId: string) => {
+      // Find all notes that reference this tag before deleting
+      const affectedNotes = state.notes.filter(n => n.tags.includes(tagId));
       dispatch({ type: 'DELETE_TAG', payload: tagId });
       await sbDeleteTag(tagId);
+      // Persist tag removal from notes to Supabase
+      for (const note of affectedNotes) {
+        const updated = { ...note, tags: note.tags.filter(t => t !== tagId) };
+        await sbUpdateNote(updated);
+      }
     },
     exportAllNotes,
     importNotesFromCSV,

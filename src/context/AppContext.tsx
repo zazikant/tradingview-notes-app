@@ -2,7 +2,7 @@
 
 import React, { createContext, useContext, useReducer, useEffect, useCallback, useRef } from 'react';
 import { AppState, AppAction, Note, Tag, PALETTE } from '@/types';
-import { loadNotes, loadTags, seedIfEmpty, subscribeToNotes, subscribeToTags } from '@/lib/supabase';
+import { loadNotes, loadTags, seedIfEmpty, subscribeToNotes, subscribeToTags, updateNote as sbUpdateNote, deleteTag as sbDeleteTag } from '@/lib/supabase';
 
 const initialState: AppState = {
   notes: [],
@@ -112,7 +112,54 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     const init = async () => {
       await seedIfEmpty();
 
-      const [notes, tags] = await Promise.all([loadNotes(), loadTags()]);
+      let [notes, tags] = await Promise.all([loadNotes(), loadTags()]);
+
+      // ── Startup cleanup: fix orphaned references ──
+      const validTagIds = new Set(tags.map(t => t.id));
+
+      // 1. Strip orphaned tag IDs from notes
+      let notesNeedCleanup = false;
+      const cleanedNotes = notes.map(n => {
+        if (n.tags.some(id => !validTagIds.has(id))) {
+          notesNeedCleanup = true;
+          return { ...n, tags: n.tags.filter(id => validTagIds.has(id)) };
+        }
+        return n;
+      });
+
+      // Persist cleaned notes to Supabase
+      if (notesNeedCleanup) {
+        for (const note of cleanedNotes) {
+          const original = notes.find(n => n.id === note.id);
+          if (original && original.tags.length !== note.tags.length) {
+            await sbUpdateNote(note);
+          }
+        }
+      }
+
+      // 2. Remove stale tags (tags with zero notes referencing them)
+      const usedTagIds = new Set(cleanedNotes.flatMap(n => n.tags));
+      let tagsNeedCleanup = false;
+      const cleanedTags = tags.filter(t => {
+        if (!usedTagIds.has(t.id)) {
+          tagsNeedCleanup = true;
+          return false;
+        }
+        return true;
+      });
+
+      // Persist: delete stale tags from Supabase
+      if (tagsNeedCleanup) {
+        const staleTagIds = tags.filter(t => !usedTagIds.has(t.id)).map(t => t.id);
+        for (const id of staleTagIds) {
+          await sbDeleteTag(id);
+        }
+      }
+
+      notes = cleanedNotes;
+      tags = cleanedTags;
+      // ── End cleanup ──
+
       dispatch({ type: 'SET_NOTES', payload: notes });
       dispatch({ type: 'SET_TAGS', payload: tags });
 

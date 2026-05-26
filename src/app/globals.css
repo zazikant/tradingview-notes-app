@@ -487,6 +487,9 @@ body {
 
 .mobile-delete-btn { display: none; }
 
+/* Hide pull-to-refresh on desktop — only shown on mobile */
+.pull-refresh-indicator { display: none; }
+
 @media (max-width: 768px) {
 }
 

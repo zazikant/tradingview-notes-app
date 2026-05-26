@@ -65,34 +65,50 @@ export function startOfYear(ts: number): number {
 }
 
 export function parseNotesFromCSV(csv: string, existingTags: Tag[], existingNotes: Note[]): { notes: Note[]; newTags: Tag[]; skipped: number } {
-  const lines = csv.split(/\r?\n/).filter(l => l.trim());
-  if (lines.length < 2) return { notes: [], newTags: [], skipped: 0 };
+  // Parse the entire CSV into rows first (handles quoted multi-line values)
+  const rows = parseCSVRows(csv);
+  if (rows.length < 2) return { notes: [], newTags: [], skipped: 0 };
+
+  // Detect column layout from header
+  const header = rows[0].map(h => h.trim().toLowerCase());
+  const tickerIdx = header.indexOf('ticker');
+  const tagsIdx = header.indexOf('tags');
+  const bodyIdx = header.indexOf('body');
+  const dateIdx = header.indexOf('date');
+
+  // Fallback: if no header match, assume [Ticker, Date, Tags, Body]
+  const tIdx = tickerIdx >= 0 ? tickerIdx : 0;
+  const tgIdx = tagsIdx >= 0 ? tagsIdx : 2;
+  const bIdx = bodyIdx >= 0 ? bodyIdx : 3;
 
   const tagNameToId = new Map(existingTags.map(t => [t.name.toLowerCase(), t.id]));
-  const existingKeys = new Set(existingNotes.map(n => `${n.ticker}:${n.body}`));
+  // Dedup by ticker (not ticker:body) — same ticker = update, don't duplicate
+  const existingTickers = new Set(existingNotes.map(n => n.ticker.trim().toLowerCase()));
   const newTagNames = new Map<string, string>();
   const notes: Note[] = [];
+  let duplicates = 0;
 
-  for (let i = 1; i < lines.length; i++) {
-    const line = lines[i];
-    if (!line.trim()) continue;
+  for (let i = 1; i < rows.length; i++) {
+    const parts = rows[i];
+    if (parts.every(p => !p.trim())) continue; // skip blank rows
 
-    const parts = parseCSVLine(line);
-    if (parts.length < 4) continue;
+    if (parts.length < 2) continue; // need at least ticker
 
-    const ticker = parts[0].replace(/""/g, '"').trim();
-    const tagStr = parts[parts.length >= 5 ? 3 : 2].trim();
-    const body = parts[parts.length >= 5 ? 4 : 3].replace(/""/g, '"').trim();
+    const ticker = (parts[tIdx] || '').replace(/""/g, '"').trim();
+    if (!ticker) continue; // skip rows without a ticker
+
+    const tagStr = (parts[tgIdx] || '').trim();
+    const body = (parts[bIdx] || '').replace(/""/g, '"').trim();
 
     const noteTags: string[] = [];
 
     if (tagStr) {
-      tagStr.split(';').map(t => t.trim()).filter(Boolean).forEach(name => {
+      tagStr.split(/[;|]/).map(t => t.trim()).filter(Boolean).forEach(name => {
         const lower = name.toLowerCase();
         if (tagNameToId.has(lower)) {
           noteTags.push(tagNameToId.get(lower)!);
         } else if (!newTagNames.has(lower)) {
-          const newId = 'tag_' + Math.random().toString(36).slice(2) + Date.now().toString(36);
+          const newId = 'tag_' + uid();
           newTagNames.set(lower, newId);
           tagNameToId.set(lower, newId);
           noteTags.push(newId);
@@ -102,16 +118,27 @@ export function parseNotesFromCSV(csv: string, existingTags: Tag[], existingNote
       });
     }
 
-    const key = `${ticker}:${body}`;
-    if (existingKeys.has(key)) continue;
-    existingKeys.add(key);
+    // Dedup: skip if a note with the same ticker already exists
+    const tickerLower = ticker.toLowerCase();
+    if (existingTickers.has(tickerLower)) {
+      duplicates++;
+      continue;
+    }
+    existingTickers.add(tickerLower);
+
+    // Parse date if available, otherwise use now
+    let created = Date.now();
+    if (dateIdx >= 0 && parts[dateIdx]) {
+      const parsed = Date.parse(parts[dateIdx].trim());
+      if (!isNaN(parsed)) created = parsed;
+    }
 
     notes.push({
       id: uid(),
       ticker,
       body,
       tags: noteTags,
-      created: Date.now(),
+      created,
     });
   }
 
@@ -121,7 +148,80 @@ export function parseNotesFromCSV(csv: string, existingTags: Tag[], existingNote
     color: Math.floor(Math.random() * 10),
   }));
 
-  return { notes, newTags, skipped: lines.length - 1 - notes.length };
+  return { notes, newTags, skipped: duplicates };
+}
+
+/**
+ * Parse a full CSV string into rows, properly handling:
+ * - Quoted fields containing commas, newlines, and escaped quotes ("")
+ * - \r\n and \n line endings
+ */
+export function parseCSVRows(csv: string): string[][] {
+  const rows: string[][] = [];
+  let currentRow: string[] = [];
+  let currentField = '';
+  let inQuotes = false;
+  let i = 0;
+
+  while (i < csv.length) {
+    const char = csv[i];
+
+    if (inQuotes) {
+      if (char === '"') {
+        if (i + 1 < csv.length && csv[i + 1] === '"') {
+          // Escaped quote ""
+          currentField += '"';
+          i += 2;
+          continue;
+        } else {
+          // End of quoted field
+          inQuotes = false;
+          i++;
+          continue;
+        }
+      } else {
+        // Any character inside quotes (including newlines) is part of the field
+        currentField += char;
+        i++;
+        continue;
+      }
+    }
+
+    // Not in quotes
+    if (char === '"') {
+      inQuotes = true;
+      i++;
+    } else if (char === ',') {
+      currentRow.push(currentField);
+      currentField = '';
+      i++;
+    } else if (char === '\r') {
+      // Handle \r\n or bare \r
+      currentRow.push(currentField);
+      currentField = '';
+      rows.push(currentRow);
+      currentRow = [];
+      i++;
+      if (i < csv.length && csv[i] === '\n') i++; // skip \n after \r
+    } else if (char === '\n') {
+      currentRow.push(currentField);
+      currentField = '';
+      rows.push(currentRow);
+      currentRow = [];
+      i++;
+    } else {
+      currentField += char;
+      i++;
+    }
+  }
+
+  // Push last field and row
+  if (currentField || currentRow.length > 0) {
+    currentRow.push(currentField);
+    rows.push(currentRow);
+  }
+
+  return rows;
 }
 
 export function parseCSVLine(line: string): string[] {
@@ -162,7 +262,8 @@ export function exportNotesToCSV(notes: Note[], tags: Tag[]): void {
     const date = fullDate(note.created);
     const ticker = note.ticker.replace(/"/g, '""');
     const body = note.body.replace(/"/g, '""');
-    return [`"${ticker}"`, `"${date}"`, tagNames, `"${body}"`].join(',');
+    const tagsEscaped = tagNames.replace(/"/g, '""');
+    return [`"${ticker}"`, `"${date}"`, `"${tagsEscaped}"`, `"${body}"`].join(',');
   });
   const csv = [headers.join(','), ...rows].join('\r\n');
   const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });

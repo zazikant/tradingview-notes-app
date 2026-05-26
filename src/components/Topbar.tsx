@@ -37,10 +37,11 @@ export function Topbar({ onDelete, onNew }: TopbarProps) {
         }
       } else {
         const skipped = await importNotesFromCSV(csv);
+        const totalImported = skipped >= 0 ? 'Notes imported' : 'Notes imported';
         if (skipped > 0) {
-          showToast(`Imported - ${skipped} duplicate(s) skipped`);
+          showToast(`Imported (${skipped} duplicate ticker(s) skipped)`);
         } else {
-          showToast('Notes imported');
+          showToast(totalImported);
         }
       }
     };

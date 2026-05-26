@@ -3,7 +3,7 @@
 import { useCallback, useRef } from 'react';
 import { useAppContext } from '@/context/AppContext';
 import { Note, Tag, AppState } from '@/types';
-import { uid, fullDate, exportNotesToCSV, parseNotesFromCSV, parseCSVLine } from '@/lib/utils';
+import { uid, fullDate, exportNotesToCSV, parseNotesFromCSV, parseCSVRows } from '@/lib/utils';
 import { addNote as sbAddNote, updateNote as sbUpdateNote, deleteNote as sbDeleteNote, addTag as sbAddTag, updateTag as sbUpdateTag, deleteTag as sbDeleteTag } from '@/lib/supabase';
 
 export function useNotes() {
@@ -190,26 +190,23 @@ export function useNotes() {
   }, [state.tags, state.notes, dispatch]);
 
   const deleteMatchingNotes = useCallback(async (csv: string): Promise<number> => {
-    const lines = csv.split(/\r?\n/).filter(l => l.trim());
-    if (lines.length < 2) return 0;
-    const keysToDelete = new Set<string>();
-    for (let i = 1; i < lines.length; i++) {
-      const line = lines[i];
-      if (!line.trim()) continue;
-      const parts = parseCSVLine(line);
-      if (parts.length < 4) continue;
-      let ticker: string;
-      let body: string;
-      if (parts.length >= 5) {
-        ticker = parts[0].replace(/""/g, '"').trim();
-        body = parts[4].replace(/""/g, '"').trim();
-      } else {
-        ticker = parts[0].replace(/""/g, '"').trim();
-        body = parts[3].replace(/""/g, '"').trim();
-      }
-      keysToDelete.add(`${ticker}:${body}`);
+    const rows = parseCSVRows(csv);
+    if (rows.length < 2) return 0;
+
+    // Detect column layout from header
+    const header = rows[0].map(h => h.trim().toLowerCase());
+    const tickerIdx = header.indexOf('ticker');
+    const tIdx = tickerIdx >= 0 ? tickerIdx : 0;
+
+    const tickersToDelete = new Set<string>();
+    for (let i = 1; i < rows.length; i++) {
+      const parts = rows[i];
+      if (parts.every(p => !p.trim())) continue;
+      const ticker = (parts[tIdx] || '').replace(/""/g, '"').trim();
+      if (ticker) tickersToDelete.add(ticker.toLowerCase());
     }
-    const toDelete = state.notes.filter(n => keysToDelete.has(`${n.ticker}:${n.body}`));
+
+    const toDelete = state.notes.filter(n => tickersToDelete.has(n.ticker.trim().toLowerCase()));
     for (const note of toDelete) {
       dispatch({ type: 'DELETE_NOTE', payload: note.id });
       await sbDeleteNote(note.id);

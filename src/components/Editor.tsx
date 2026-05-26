@@ -13,7 +13,7 @@ interface EditorProps {
 
 /** Simple markdown → HTML renderer for preview mode
  *  Keeps the raw text layout (numbers, bullets, indentation) exactly as typed.
- *  Only applies inline formatting: bold, italic, strikethrough, headings. */
+ *  Only applies inline formatting: bold, italic, strikethrough, highlight, links, headings. */
 function renderMarkdown(text: string): string {
   // Apply renumber first so preview always shows clean sequential numbers
   const renumbered = renumberLists(text);
@@ -31,7 +31,16 @@ function renderMarkdown(text: string): string {
     if (headingMatch) {
       const level = headingMatch[1].length;
       const content = line.replace(/^#{1,3}\s+/, '');
-      output.push(`<h${level}>${content}</h${level}>`);
+      // Process inline formatting inside headings too
+      let headingContent = content;
+      headingContent = headingContent.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+      headingContent = headingContent.replace(/__(.+?)__/g, '<strong>$1</strong>');
+      headingContent = headingContent.replace(/(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)/g, '<em>$1</em>');
+      headingContent = headingContent.replace(/(?<!_)_(?!_)(.+?)(?<!_)_(?!_)/g, '<em>$1</em>');
+      headingContent = headingContent.replace(/~~(.+?)~~/g, '<del>$1</del>');
+      headingContent = headingContent.replace(/==(.+?)==/g, '<mark>$1</mark>');
+      headingContent = headingContent.replace(/\[(.+?)\]\((.+?)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
+      output.push(`<h${level}>${headingContent}</h${level}>`);
       continue;
     }
 
@@ -45,6 +54,8 @@ function renderMarkdown(text: string): string {
     line = line.replace(/~~(.+?)~~/g, '<del>$1</del>');
     // Highlight: ==text==
     line = line.replace(/==(.+?)==/g, '<mark>$1</mark>');
+    // Links: [text](url)
+    line = line.replace(/\[(.+?)\]\((.+?)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
 
     output.push(line);
   }
@@ -95,8 +106,11 @@ export function Editor({ onCopy, onDelete, onSave }: EditorProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const tickerRef = useRef<HTMLTextAreaElement>(null);
   const editorBodyRef = useRef<HTMLDivElement>(null);
+  const fullscreenTextareaRef = useRef<HTMLTextAreaElement>(null);
   // Default: view/read mode. Must explicitly click Edit to enable editing.
   const [isEditing, setIsEditing] = useState(false);
+  // Full screen / focus mode
+  const [isFullscreen, setIsFullscreen] = useState(false);
 
   // Pull-to-refresh support on the editor body
   const { containerRef: pullRef, pullState } = usePullToRefresh(70, () => {
@@ -119,27 +133,21 @@ export function Editor({ onCopy, onDelete, onSave }: EditorProps) {
   }, [activeNote?.id]);
 
   // Scroll the textarea so the cursor is visible above the bottom mobile nav
-  const scrollCursorIntoView = useCallback(() => {
-    const ta = textareaRef.current;
-    if (!ta) return;
-    // Use a small delay to let React update the value first
+  const scrollCursorIntoView = useCallback((ta?: HTMLTextAreaElement | null) => {
+    const target = ta || textareaRef.current;
+    if (!target) return;
     requestAnimationFrame(() => {
-      const cursorPos = ta.selectionStart;
-      const textBeforeCursor = ta.value.substring(0, cursorPos);
+      const cursorPos = target.selectionStart;
+      const textBeforeCursor = target.value.substring(0, cursorPos);
       const linesBeforeCursor = textBeforeCursor.split('\n').length;
-      const lineHeight = parseFloat(getComputedStyle(ta).lineHeight) || 24;
-      const paddingTop = parseFloat(getComputedStyle(ta).paddingTop) || 16;
-      // Calculate the pixel position of the cursor from the top of the content
+      const lineHeight = parseFloat(getComputedStyle(target).lineHeight) || 24;
+      const paddingTop = parseFloat(getComputedStyle(target).paddingTop) || 16;
       const cursorY = paddingTop + (linesBeforeCursor - 1) * lineHeight;
-      // The visible height of the textarea (viewport)
-      const visibleHeight = ta.clientHeight;
-      // We want the cursor to be at least 80px above the bottom of the visible area
-      // to clear the mobile bottom nav
+      const visibleHeight = target.clientHeight;
       const bottomBuffer = 80;
       const maxScrollTop = cursorY - visibleHeight + bottomBuffer;
-      // If the cursor is below the safe visible area, scroll down
-      if (ta.scrollTop < maxScrollTop) {
-        ta.scrollTop = maxScrollTop;
+      if (target.scrollTop < maxScrollTop) {
+        target.scrollTop = maxScrollTop;
       }
     });
   }, []);
@@ -195,12 +203,10 @@ export function Editor({ onCopy, onDelete, onSave }: EditorProps) {
     const start = ta.selectionStart;
     const end = ta.selectionEnd;
     const value = ta.value;
-    // Find the start of the current line
     const lineStart = value.lastIndexOf('\n', start - 1) + 1;
     const lineEnd = value.indexOf('\n', end);
     const fullLineEnd = lineEnd === -1 ? value.length : lineEnd;
     const currentLine = value.substring(lineStart, fullLineEnd);
-    // Toggle heading levels: no # → ## → ### → # (cycle)
     const h3Match = currentLine.match(/^###\s+/);
     const h2Match = currentLine.match(/^##\s+(?!#)/);
     const h1Match = currentLine.match(/^#\s+(?!#)/);
@@ -234,6 +240,28 @@ export function Editor({ onCopy, onDelete, onSave }: EditorProps) {
     scheduleAutoSave();
     setTimeout(() => {
       ta.setSelectionRange(start + 2, end + 2);
+      ta.focus();
+    }, 0);
+  }, [updateCurrentNote, scheduleAutoSave]);
+
+  const applyLink = useCallback(() => {
+    const ta = textareaRef.current;
+    if (!ta) return;
+    const start = ta.selectionStart;
+    const end = ta.selectionEnd;
+    const selected = ta.value.substring(start, end);
+    // If text is selected, use it as link text and prompt for URL
+    // If no text selected, insert placeholder
+    const linkText = selected || 'link text';
+    const url = prompt('Enter URL:', 'https://');
+    if (!url) return; // cancelled
+    const insertion = `[${linkText}](${url})`;
+    const newText = ta.value.substring(0, start) + insertion + ta.value.substring(end);
+    updateCurrentNote({ body: newText });
+    scheduleAutoSave();
+    setTimeout(() => {
+      // Select the link text portion so user can type over it
+      ta.setSelectionRange(start + 1, start + 1 + linkText.length);
       ta.focus();
     }, 0);
   }, [updateCurrentNote, scheduleAutoSave]);
@@ -272,14 +300,14 @@ export function Editor({ onCopy, onDelete, onSave }: EditorProps) {
     }, 0);
   }, [updateCurrentNote, scheduleAutoSave]);
 
-  const handleEditorKeyDown = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    const ta = textareaRef.current;
+  // Fullscreen textarea keydown handler (delegates to same logic)
+  const handleEditorKeyDown = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>, ta: HTMLTextAreaElement | null = null) => {
+    const target = ta || textareaRef.current;
 
     // ── Enter key: auto-continue lists ──
-    if (e.key === 'Enter' && !e.metaKey && !e.ctrlKey && !e.altKey && ta) {
-      const value = ta.value;
-      const cursorPos = ta.selectionStart;
-      // Find the start of the current line
+    if (e.key === 'Enter' && !e.metaKey && !e.ctrlKey && !e.altKey && target) {
+      const value = target.value;
+      const cursorPos = target.selectionStart;
       const lineStart = value.lastIndexOf('\n', cursorPos - 1) + 1;
       const currentLine = value.substring(lineStart, cursorPos);
 
@@ -287,7 +315,6 @@ export function Editor({ onCopy, onDelete, onSave }: EditorProps) {
       const numberedMatch = currentLine.match(/^(\d+)\.\s+/);
       if (numberedMatch) {
         const prefix = numberedMatch[0];
-        // If the line is ONLY the prefix (no content), remove it and exit list
         if (currentLine.trim() === prefix.trim()) {
           e.preventDefault();
           const before = value.substring(0, lineStart);
@@ -296,12 +323,11 @@ export function Editor({ onCopy, onDelete, onSave }: EditorProps) {
           updateCurrentNote({ body: newText });
           scheduleAutoSave();
           setTimeout(() => {
-            ta.selectionStart = ta.selectionEnd = before.length + 1;
-            scrollCursorIntoView();
+            target.selectionStart = target.selectionEnd = before.length + 1;
+            scrollCursorIntoView(target);
           }, 0);
           return;
         }
-        // Continue with next number
         const nextNum = parseInt(numberedMatch[1], 10) + 1;
         const nextPrefix = `${nextNum}. `;
         e.preventDefault();
@@ -312,19 +338,16 @@ export function Editor({ onCopy, onDelete, onSave }: EditorProps) {
         scheduleAutoSave();
         setTimeout(() => {
           const newPos = before.length + 1 + nextPrefix.length;
-          ta.selectionStart = ta.selectionEnd = newPos;
-          scrollCursorIntoView();
+          target.selectionStart = target.selectionEnd = newPos;
+          scrollCursorIntoView(target);
         }, 0);
         return;
       }
 
-      // Match indented sub-bullet list: " - " or "  * " (under a numbered item)
+      // Match indented sub-bullet list
       const subBulletMatch = currentLine.match(/^(\s+)([-*])\s+/);
       if (subBulletMatch) {
-        const indent = subBulletMatch[1];
         const bulletChar = subBulletMatch[2];
-        const prefix = subBulletMatch[0];
-        // If the line is ONLY the prefix (no content), remove it and exit to plain line
         if (currentLine.trim() === `${bulletChar} ` || currentLine.trim() === `${bulletChar}`) {
           e.preventDefault();
           const before = value.substring(0, lineStart);
@@ -333,53 +356,43 @@ export function Editor({ onCopy, onDelete, onSave }: EditorProps) {
           updateCurrentNote({ body: newText });
           scheduleAutoSave();
           setTimeout(() => {
-            ta.selectionStart = ta.selectionEnd = before.length + 1;
-            scrollCursorIntoView();
+            target.selectionStart = target.selectionEnd = before.length + 1;
+            scrollCursorIntoView(target);
           }, 0);
           return;
         }
-        // Sub-bullet has content → transition to next numbered item
-        // Find the most recent numbered item above this line
         e.preventDefault();
         const textBeforeLine = value.substring(0, lineStart);
         const prevLines = textBeforeLine.split('\n');
         let lastNumber = 0;
         for (let i = prevLines.length - 1; i >= 0; i--) {
           const nm = prevLines[i].match(/^(\d+)\.\s+/);
-          if (nm) {
-            lastNumber = parseInt(nm[1], 10);
-            break;
-          }
+          if (nm) { lastNumber = parseInt(nm[1], 10); break; }
         }
-        const nextNum = lastNumber + 1;
-        const nextPrefix = `${nextNum}. `;
+        const nextPrefix = `${lastNumber + 1}. `;
         const before = value.substring(0, cursorPos);
         const after = value.substring(cursorPos);
         const newText = before + '\n' + nextPrefix + after;
         updateCurrentNote({ body: renumberLists(newText) });
         scheduleAutoSave();
         setTimeout(() => {
-          // After renumber, find the actual line start and prefix length
-          const updatedText = ta.value;
-          // The new line starts after 'before' + '\n'
           const newLineStart = before.length + 1;
-          const updatedLine = updatedText.substring(newLineStart, newLineStart + 20);
+          const updatedLine = target.value.substring(newLineStart, newLineStart + 20);
           const updatedNumMatch = updatedLine.match(/^(\d+)\.\s+/);
           if (updatedNumMatch) {
-            ta.selectionStart = ta.selectionEnd = newLineStart + updatedNumMatch[0].length;
+            target.selectionStart = target.selectionEnd = newLineStart + updatedNumMatch[0].length;
           } else {
-            ta.selectionStart = ta.selectionEnd = newLineStart + nextPrefix.length;
+            target.selectionStart = target.selectionEnd = newLineStart + nextPrefix.length;
           }
-          scrollCursorIntoView();
+          scrollCursorIntoView(target);
         }, 0);
         return;
       }
 
-      // Match top-level bullet list: "- " or "* " (not indented)
+      // Match top-level bullet list
       const bulletMatch = currentLine.match(/^[-*]\s+/);
       if (bulletMatch) {
         const prefix = bulletMatch[0];
-        // If the line is ONLY the bullet prefix (no content), remove it and exit list
         if (currentLine.trim() === prefix.trim()) {
           e.preventDefault();
           const before = value.substring(0, lineStart);
@@ -388,12 +401,11 @@ export function Editor({ onCopy, onDelete, onSave }: EditorProps) {
           updateCurrentNote({ body: newText });
           scheduleAutoSave();
           setTimeout(() => {
-            ta.selectionStart = ta.selectionEnd = before.length + 1;
-            scrollCursorIntoView();
+            target.selectionStart = target.selectionEnd = before.length + 1;
+            scrollCursorIntoView(target);
           }, 0);
           return;
         }
-        // Continue with same bullet prefix
         e.preventDefault();
         const before = value.substring(0, cursorPos);
         const after = value.substring(cursorPos);
@@ -402,75 +414,37 @@ export function Editor({ onCopy, onDelete, onSave }: EditorProps) {
         scheduleAutoSave();
         setTimeout(() => {
           const newPos = before.length + 1 + prefix.length;
-          ta.selectionStart = ta.selectionEnd = newPos;
-          scrollCursorIntoView();
+          target.selectionStart = target.selectionEnd = newPos;
+          scrollCursorIntoView(target);
         }, 0);
         return;
       }
 
-      // Plain Enter (not in a list) — still need to scroll cursor into safe view
-      // Let the default Enter happen, then scroll after
-      setTimeout(() => {
-        scrollCursorIntoView();
-      }, 0);
+      setTimeout(() => { scrollCursorIntoView(target); }, 0);
     }
 
-    // Bold: Ctrl+Shift+B or Ctrl+B
-    if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key === 'B') {
-      e.preventDefault();
-      e.stopPropagation();
-      applyBold();
-      return;
-    }
-    if ((e.metaKey || e.ctrlKey) && e.key === 'b') {
-      e.preventDefault();
-      e.stopPropagation();
-      applyBold();
-      return;
-    }
-    // Italic: Ctrl+I
-    if ((e.metaKey || e.ctrlKey) && e.key === 'i') {
-      e.preventDefault();
-      e.stopPropagation();
-      applyItalic();
-      return;
-    }
-    // Strikethrough: Ctrl+Shift+X
-    if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key === 'X') {
-      e.preventDefault();
-      e.stopPropagation();
-      applyStrikethrough();
-      return;
-    }
-    // Highlight: Ctrl+Shift+H
-    if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key === 'H') {
-      e.preventDefault();
-      e.stopPropagation();
-      applyHighlight();
-      return;
-    }
-    // Heading: Ctrl+H
-    if ((e.metaKey || e.ctrlKey) && e.key === 'h') {
-      e.preventDefault();
-      e.stopPropagation();
-      applyHeading();
-      return;
-    }
-    // Numbered list: Ctrl+Shift+L (Ctrl+L is reserved by browser for address bar)
-    if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key === 'L') {
-      e.preventDefault();
-      e.stopPropagation();
-      applyList();
-      return;
-    }
-    // Bullet list: Ctrl+Shift+U
-    if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key === 'U') {
-      e.preventDefault();
-      e.stopPropagation();
-      applyBulletList();
-      return;
-    }
-  }, [applyBold, applyItalic, applyStrikethrough, applyHeading, applyHighlight, applyList, applyBulletList, updateCurrentNote, scheduleAutoSave, scrollCursorIntoView]);
+    // Keyboard shortcuts
+    if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key === 'B') { e.preventDefault(); e.stopPropagation(); applyBold(); return; }
+    if ((e.metaKey || e.ctrlKey) && e.key === 'b') { e.preventDefault(); e.stopPropagation(); applyBold(); return; }
+    if ((e.metaKey || e.ctrlKey) && e.key === 'i') { e.preventDefault(); e.stopPropagation(); applyItalic(); return; }
+    if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key === 'X') { e.preventDefault(); e.stopPropagation(); applyStrikethrough(); return; }
+    if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key === 'H') { e.preventDefault(); e.stopPropagation(); applyHighlight(); return; }
+    if ((e.metaKey || e.ctrlKey) && e.key === 'h') { e.preventDefault(); e.stopPropagation(); applyHeading(); return; }
+    if ((e.metaKey || e.ctrlKey) && e.key === 'k') { e.preventDefault(); e.stopPropagation(); applyLink(); return; }
+    if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key === 'L') { e.preventDefault(); e.stopPropagation(); applyList(); return; }
+    if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key === 'U') { e.preventDefault(); e.stopPropagation(); applyBulletList(); return; }
+  }, [applyBold, applyItalic, applyStrikethrough, applyHeading, applyHighlight, applyLink, applyList, applyBulletList, updateCurrentNote, scheduleAutoSave, scrollCursorIntoView]);
+
+  // ESC to exit fullscreen
+  useEffect(() => {
+    const handleEsc = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && isFullscreen) {
+        setIsFullscreen(false);
+      }
+    };
+    window.addEventListener('keydown', handleEsc);
+    return () => window.removeEventListener('keydown', handleEsc);
+  }, [isFullscreen]);
 
   // Word count
   const wordCount = activeNote?.body.trim()
@@ -502,15 +476,13 @@ export function Editor({ onCopy, onDelete, onSave }: EditorProps) {
           rows={1}
           readOnly={!isEditing}
           onKeyDown={e => {
-            // Only stop propagation for Ctrl/Cmd shortcuts
-            if ((e.metaKey || e.ctrlKey) && (e.key === 's' || e.key === 'n' || e.key === 'b' || e.key === 'i' || e.key === 'h' || (e.shiftKey && (e.key === 'L' || e.key === 'U' || e.key === 'X' || e.key === 'H')))) {
+            if ((e.metaKey || e.ctrlKey) && (e.key === 's' || e.key === 'n' || e.key === 'b' || e.key === 'i' || e.key === 'h' || e.key === 'k' || (e.shiftKey && (e.key === 'L' || e.key === 'U' || e.key === 'X' || e.key === 'H')))) {
               e.stopPropagation();
             }
           }}
           onChange={e => {
             updateCurrentNote({ ticker: e.target.value });
             scheduleAutoSave();
-            // Auto-grow: reset height then set to scrollHeight
             requestAnimationFrame(() => {
               const el = tickerRef.current;
               if (el) {
@@ -589,6 +561,14 @@ export function Editor({ onCopy, onDelete, onSave }: EditorProps) {
             </button>
             <button
               className="fmt-btn"
+              title="Link (Ctrl+K)"
+              onMouseDown={e => e.preventDefault()}
+              onClick={() => applyLink()}
+            >
+              <span style={{ fontFamily: 'monospace', fontWeight: 700, textDecoration: 'underline', color: '#2563eb' }}>🔗</span>
+            </button>
+            <button
+              className="fmt-btn"
               title="Heading (Ctrl+H)"
               onMouseDown={e => e.preventDefault()}
               onClick={() => applyHeading()}
@@ -620,7 +600,6 @@ export function Editor({ onCopy, onDelete, onSave }: EditorProps) {
             onMouseDown={e => e.preventDefault()}
             onClick={() => {
               if (isEditing) {
-                // Exiting edit mode — renumber lists, save and switch to view
                 const renumbered = renumberLists(activeNote.body);
                 updateCurrentNote({ body: renumbered });
                 saveCurrentNote();
@@ -654,6 +633,14 @@ export function Editor({ onCopy, onDelete, onSave }: EditorProps) {
         </div>
       </div>
       <div className="editor-body" ref={setBodyRef}>
+        {/* Fullscreen toggle — top right of editor body */}
+        <button
+          className="fullscreen-toggle-btn"
+          title="Focus mode (full screen)"
+          onClick={() => setIsFullscreen(true)}
+        >
+          ⛶
+        </button>
         {/* Pull-to-refresh indicator (mobile only) */}
         <div className={`pull-refresh-indicator ${pullState !== 'idle' ? 'visible' : ''}`}>
           {pullState === 'refreshing' ? (
@@ -668,12 +655,11 @@ export function Editor({ onCopy, onDelete, onSave }: EditorProps) {
           <textarea
             ref={textareaRef}
             className="editor-textarea"
-            placeholder="Write your analysis, observations, trade rationale…&#10;&#10;Formatting: **bold**, _italic_, ~~strikethrough~~, ==highlight==&#10;1. or - then Enter = auto-continue list&#10;Ctrl+B Bold | Ctrl+I Italic | Ctrl+H Heading | Ctrl+Shift+H Highlight"
+            placeholder="Write your analysis, observations, trade rationale…&#10;&#10;Formatting: **bold**, _italic_, ~~strikethrough~~, ==highlight==, [link](url)&#10;1. or - then Enter = auto-continue list&#10;Ctrl+B Bold | Ctrl+I Italic | Ctrl+H Heading | Ctrl+K Link | Ctrl+Shift+H Highlight"
             value={activeNote.body}
             onChange={e => {
               updateCurrentNote({ body: e.target.value });
               scheduleAutoSave();
-              // On mobile, ensure cursor stays visible above bottom nav after typing
               scrollCursorIntoView();
             }}
             onKeyDown={handleEditorKeyDown}
@@ -685,6 +671,69 @@ export function Editor({ onCopy, onDelete, onSave }: EditorProps) {
           />
         )}
       </div>
+
+      {/* ── Full screen / Focus mode overlay ── */}
+      {isFullscreen && (
+        <div className="fullscreen-overlay">
+          <div className="fullscreen-container">
+            {/* Top bar: title + collapse button */}
+            <div className="fullscreen-topbar">
+              <div className="fullscreen-title">{activeNote.ticker}</div>
+              <div className="fullscreen-actions">
+                {isEditing && (
+                  <button
+                    className="fmt-btn"
+                    title="Save note"
+                    onClick={async () => { const renumbered = renumberLists(activeNote.body); updateCurrentNote({ body: renumbered }); await saveCurrentNote(); onSave(); }}
+                  >{isDirty() ? 'Save •' : 'Saved'}</button>
+                )}
+                <button
+                  className={`fmt-btn ${isEditing ? 'fmt-btn-active' : 'fmt-btn-edit-primary'}`}
+                  title={isEditing ? 'Done editing' : 'Edit this note'}
+                  onClick={() => {
+                    if (isEditing) {
+                      const renumbered = renumberLists(activeNote.body);
+                      updateCurrentNote({ body: renumbered });
+                      saveCurrentNote();
+                      onSave();
+                    }
+                    setIsEditing(!isEditing);
+                  }}
+                >
+                  {isEditing ? '✓ Done' : '✎ Edit'}
+                </button>
+                <button
+                  className="fmt-btn fullscreen-collapse-btn"
+                  title="Exit focus mode (Esc)"
+                  onClick={() => setIsFullscreen(false)}
+                >
+                  ✕
+                </button>
+              </div>
+            </div>
+            {/* Content area */}
+            <div className="fullscreen-content">
+              {isEditing ? (
+                <textarea
+                  ref={fullscreenTextareaRef}
+                  className="fullscreen-textarea"
+                  value={activeNote.body}
+                  onChange={e => {
+                    updateCurrentNote({ body: e.target.value });
+                    scheduleAutoSave();
+                  }}
+                  onKeyDown={e => handleEditorKeyDown(e, fullscreenTextareaRef.current)}
+                />
+              ) : (
+                <div
+                  className="fullscreen-preview"
+                  dangerouslySetInnerHTML={{ __html: renderMarkdown(activeNote.body) }}
+                />
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

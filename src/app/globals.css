@@ -461,6 +461,8 @@ body {
 .editor-preview em { font-style: italic; }
 .editor-preview del { text-decoration: line-through; color: var(--muted); }
 .editor-preview mark { background: #fef08a; color: inherit; padding: 1px 3px; border-radius: 3px; }
+.editor-preview a { color: #2563eb; text-decoration: underline; cursor: pointer; }
+.editor-preview a:hover { color: #1d4ed8; }
 .editor-preview h1 { font-family: var(--font-syne), 'Syne', sans-serif; font-size: 22px; font-weight: 700; margin: 1em 0 0.5em; letter-spacing: -0.02em; }
 .editor-preview h2 { font-family: var(--font-syne), 'Syne', sans-serif; font-size: 18px; font-weight: 700; margin: 0.8em 0 0.4em; letter-spacing: -0.01em; }
 .editor-preview h3 { font-family: var(--font-syne), 'Syne', sans-serif; font-size: 15px; font-weight: 700; margin: 0.6em 0 0.3em; }
@@ -468,6 +470,128 @@ body {
 /* ── Text selection highlight (Kindle yellow) in preview ── */
 .editor-preview ::selection { background: #fef08a; color: inherit; }
 .editor-preview ::-moz-selection { background: #fef08a; color: inherit; }
+
+/* ── Fullscreen toggle button (top right of editor body) ── */
+.fullscreen-toggle-btn {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 10;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 4px 8px;
+  font-size: 16px;
+  cursor: pointer;
+  color: var(--muted);
+  line-height: 1;
+  opacity: 0.6;
+  transition: opacity 0.2s, background 0.2s;
+}
+.fullscreen-toggle-btn:hover { opacity: 1; background: var(--border); }
+
+/* ── Full screen / Focus mode overlay ── */
+.fullscreen-overlay {
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  z-index: 1000;
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 2rem 1rem;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+.fullscreen-container {
+  background: var(--card);
+  border-radius: 12px;
+  width: 100%;
+  max-width: 800px;
+  min-height: 60vh;
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+  position: relative;
+}
+.fullscreen-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.fullscreen-title {
+  font-family: var(--font-syne), 'Syne', sans-serif;
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--fg);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 50%;
+}
+.fullscreen-actions {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+.fullscreen-collapse-btn {
+  font-size: 16px;
+  font-weight: 700;
+  padding: 4px 10px;
+}
+.fullscreen-content {
+  flex: 1;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  position: relative;
+}
+.fullscreen-textarea {
+  width: 100%;
+  height: 100%;
+  min-height: 55vh;
+  border: none;
+  outline: none;
+  resize: none;
+  padding: 24px 32px;
+  font-size: 16px;
+  line-height: 1.8;
+  font-family: var(--font-body), 'DM Sans', sans-serif;
+  background: transparent;
+  color: var(--fg);
+}
+.fullscreen-preview {
+  padding: 24px 32px;
+  font-size: 16px;
+  line-height: 1.8;
+  color: var(--fg);
+  word-wrap: break-word;
+}
+.fullscreen-preview ::selection { background: #fef08a; color: inherit; }
+.fullscreen-preview a { color: #2563eb; text-decoration: underline; cursor: pointer; }
+.fullscreen-preview a:hover { color: #1d4ed8; }
+.fullscreen-preview mark { background: #fef08a; color: inherit; padding: 1px 3px; border-radius: 3px; }
+.fullscreen-preview strong { font-weight: 700; }
+.fullscreen-preview em { font-style: italic; }
+.fullscreen-preview del { text-decoration: line-through; color: var(--muted); }
+.fullscreen-preview h1 { font-size: 24px; font-weight: 700; margin: 0.8em 0 0.4em; }
+.fullscreen-preview h2 { font-size: 20px; font-weight: 700; margin: 0.7em 0 0.3em; }
+.fullscreen-preview h3 { font-size: 17px; font-weight: 700; margin: 0.6em 0 0.3em; }
+
+/* Mobile fullscreen adjustments */
+@media (max-width: 768px) {
+  .fullscreen-overlay { padding: 0; }
+  .fullscreen-container { max-width: 100%; border-radius: 0; min-height: 100vh; max-height: 100vh; }
+  .fullscreen-topbar { padding: 10px 12px; }
+  .fullscreen-title { font-size: 16px; max-width: 40%; }
+  .fullscreen-textarea, .fullscreen-preview { padding: 16px; font-size: 15px; }
+  .fullscreen-textarea { min-height: calc(100vh - 56px); padding-bottom: 6rem; }
+}
 
 /* ── Read-only preview mode ── */
 .editor-preview-readonly { cursor: default; }

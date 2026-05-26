@@ -106,22 +106,13 @@ export function Editor({ onCopy, onDelete, onSave }: EditorProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const tickerRef = useRef<HTMLTextAreaElement>(null);
   const editorBodyRef = useRef<HTMLDivElement>(null);
-  const fullscreenTextareaRef = useRef<HTMLTextAreaElement>(null);
   // Default: view/read mode. Must explicitly click Edit to enable editing.
   const [isEditing, setIsEditing] = useState(false);
-  // Full screen / focus mode
-  const [isFullscreen, setIsFullscreen] = useState(false);
 
   // Pull-to-refresh support on the editor body
-  const { containerRef: pullRef, pullState } = usePullToRefresh(70, () => {
+  const { pullState } = usePullToRefresh(70, () => {
     window.location.reload();
   });
-
-  // Merge pullRef and editorBodyRef
-  const setBodyRef = useCallback((el: HTMLDivElement | null) => {
-    (pullRef as React.MutableRefObject<HTMLDivElement | null>).current = el;
-    (editorBodyRef as React.MutableRefObject<HTMLDivElement | null>).current = el;
-  }, [pullRef]);
 
   // Auto-grow ticker on mount and when activeNote changes
   useEffect(() => {
@@ -300,9 +291,8 @@ export function Editor({ onCopy, onDelete, onSave }: EditorProps) {
     }, 0);
   }, [updateCurrentNote, scheduleAutoSave]);
 
-  // Fullscreen textarea keydown handler (delegates to same logic)
-  const handleEditorKeyDown = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>, ta: HTMLTextAreaElement | null = null) => {
-    const target = ta || textareaRef.current;
+  const handleEditorKeyDown = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    const target = textareaRef.current;
 
     // ── Enter key: auto-continue lists ──
     if (e.key === 'Enter' && !e.metaKey && !e.ctrlKey && !e.altKey && target) {
@@ -435,16 +425,7 @@ export function Editor({ onCopy, onDelete, onSave }: EditorProps) {
     if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key === 'U') { e.preventDefault(); e.stopPropagation(); applyBulletList(); return; }
   }, [applyBold, applyItalic, applyStrikethrough, applyHeading, applyHighlight, applyLink, applyList, applyBulletList, updateCurrentNote, scheduleAutoSave, scrollCursorIntoView]);
 
-  // ESC to exit fullscreen
-  useEffect(() => {
-    const handleEsc = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && isFullscreen) {
-        setIsFullscreen(false);
-      }
-    };
-    window.addEventListener('keydown', handleEsc);
-    return () => window.removeEventListener('keydown', handleEsc);
-  }, [isFullscreen]);
+
 
   // Word count
   const wordCount = activeNote?.body.trim()
@@ -632,15 +613,7 @@ export function Editor({ onCopy, onDelete, onSave }: EditorProps) {
           <button className={`fmt-btn fmt-btn-save ${isDirty() ? 'fmt-btn-dirty' : ''}`} title="Save note (Ctrl+S)" onClick={async () => { const renumbered = renumberLists(activeNote.body); updateCurrentNote({ body: renumbered }); await saveCurrentNote(); onSave(); }}>{isDirty() ? 'Save •' : 'Saved'}</button>
         </div>
       </div>
-      <div className="editor-body" ref={setBodyRef}>
-        {/* Fullscreen toggle — top right of editor body */}
-        <button
-          className="fullscreen-toggle-btn"
-          title="Focus mode (full screen)"
-          onClick={() => setIsFullscreen(true)}
-        >
-          ⛶
-        </button>
+      <div className="editor-body" ref={editorBodyRef}>
         {/* Pull-to-refresh indicator (mobile only) */}
         <div className={`pull-refresh-indicator ${pullState !== 'idle' ? 'visible' : ''}`}>
           {pullState === 'refreshing' ? (
@@ -672,68 +645,6 @@ export function Editor({ onCopy, onDelete, onSave }: EditorProps) {
         )}
       </div>
 
-      {/* ── Full screen / Focus mode overlay ── */}
-      {isFullscreen && (
-        <div className="fullscreen-overlay">
-          <div className="fullscreen-container">
-            {/* Top bar: title + collapse button */}
-            <div className="fullscreen-topbar">
-              <div className="fullscreen-title">{activeNote.ticker}</div>
-              <div className="fullscreen-actions">
-                {isEditing && (
-                  <button
-                    className="fmt-btn"
-                    title="Save note"
-                    onClick={async () => { const renumbered = renumberLists(activeNote.body); updateCurrentNote({ body: renumbered }); await saveCurrentNote(); onSave(); }}
-                  >{isDirty() ? 'Save •' : 'Saved'}</button>
-                )}
-                <button
-                  className={`fmt-btn ${isEditing ? 'fmt-btn-active' : 'fmt-btn-edit-primary'}`}
-                  title={isEditing ? 'Done editing' : 'Edit this note'}
-                  onClick={() => {
-                    if (isEditing) {
-                      const renumbered = renumberLists(activeNote.body);
-                      updateCurrentNote({ body: renumbered });
-                      saveCurrentNote();
-                      onSave();
-                    }
-                    setIsEditing(!isEditing);
-                  }}
-                >
-                  {isEditing ? '✓ Done' : '✎ Edit'}
-                </button>
-                <button
-                  className="fmt-btn fullscreen-collapse-btn"
-                  title="Exit focus mode (Esc)"
-                  onClick={() => setIsFullscreen(false)}
-                >
-                  ✕
-                </button>
-              </div>
-            </div>
-            {/* Content area */}
-            <div className="fullscreen-content">
-              {isEditing ? (
-                <textarea
-                  ref={fullscreenTextareaRef}
-                  className="fullscreen-textarea"
-                  value={activeNote.body}
-                  onChange={e => {
-                    updateCurrentNote({ body: e.target.value });
-                    scheduleAutoSave();
-                  }}
-                  onKeyDown={e => handleEditorKeyDown(e, fullscreenTextareaRef.current)}
-                />
-              ) : (
-                <div
-                  className="fullscreen-preview"
-                  dangerouslySetInnerHTML={{ __html: renderMarkdown(activeNote.body) }}
-                />
-              )}
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

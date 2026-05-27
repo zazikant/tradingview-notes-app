@@ -24,7 +24,7 @@ function applyInline(text: string): string {
   return t;
 }
 
-/** Parse markdown table lines into an HTML table string. */
+/** Parse markdown table lines into an HTML table string with a copy button. */
 function renderTableBlock(tableLines: string[]): string {
   // A separator row matches: | --- | --- | (dashes and colons only between pipes)
   const isSeparator = (line: string) => /^\|[\s\-:]+\|/.test(line);
@@ -71,6 +71,20 @@ function renderTableBlock(tableLines: string[]): string {
   }
 
   html += '</table>';
+
+  // Store the raw markdown (with pipes) in a data attribute for the copy button
+  const rawMarkdown = tableLines.join('\n')
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+
+  // Wrap in a container with a copy button
+  html = `<div class="table-wrapper" data-markdown="${rawMarkdown}">` +
+    `<button class="table-copy-btn" title="Copy table as markdown">&#128203;</button>` +
+    html +
+    `</div>`;
+
   return html;
 }
 
@@ -132,8 +146,8 @@ function renderMarkdown(text: string): string {
   html = html.replace(/<p>\s*(<h[1-3]>)/g, '$1');
   html = html.replace(/(<\/h[1-3]>)\s*<\/p>/g, '$1');
   // Don't wrap tables in <p>
-  html = html.replace(/<p>\s*(<table>)/g, '$1');
-  html = html.replace(/(<\/table>)\s*<\/p>/g, '$1');
+  html = html.replace(/<p>\s*(<div class="table-wrapper")/g, '$1');
+  html = html.replace(/(<\/div>)\s*<\/p>/g, '$1');
 
   return html;
 }
@@ -184,6 +198,37 @@ export function Editor({ onCopy, onDelete, onSave }: EditorProps) {
       el.style.height = el.scrollHeight + 'px';
     }
   }, [activeNote?.id]);
+
+  // Handle "copy table as markdown" clicks in preview mode
+  useEffect(() => {
+    const handleClick = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      if (!target.classList.contains('table-copy-btn')) return;
+      const wrapper = target.closest('.table-wrapper') as HTMLElement | null;
+      if (!wrapper) return;
+      const markdown = wrapper.getAttribute('data-markdown');
+      if (!markdown) return;
+      // Decode HTML entities back to plain text
+      const decoded = markdown
+        .replace(/&amp;/g, '&')
+        .replace(/&lt;/g, '<')
+        .replace(/&gt;/g, '>')
+        .replace(/&quot;/g, '"');
+      navigator.clipboard.writeText(decoded).then(() => {
+        // Visual feedback: briefly change the button text
+        const btn = target as HTMLButtonElement;
+        const original = btn.innerHTML;
+        btn.innerHTML = '&#10003;'; // checkmark
+        btn.classList.add('copied');
+        setTimeout(() => {
+          btn.innerHTML = original;
+          btn.classList.remove('copied');
+        }, 1200);
+      });
+    };
+    document.addEventListener('click', handleClick);
+    return () => document.removeEventListener('click', handleClick);
+  }, []);
 
   // Scroll the textarea so the cursor is visible above the bottom mobile nav
   const scrollCursorIntoView = useCallback((ta?: HTMLTextAreaElement | null) => {

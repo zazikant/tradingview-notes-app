@@ -6,11 +6,16 @@ const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'eyJhbGci
 
 export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
+// Safety limit: prevents accidental massive payloads
+const NOTES_LIMIT = 5000;
+const TAGS_LIMIT = 500;
+
 export async function loadNotes(): Promise<Note[]> {
   const { data, error } = await supabase
     .from('notes')
-    .select('*')
-    .order('created', { ascending: false });
+    .select('client_id, ticker, body, tags, created')
+    .order('created', { ascending: false })
+    .limit(NOTES_LIMIT);
 
   if (error) {
     console.error('Error loading notes:', error);
@@ -29,8 +34,9 @@ export async function loadNotes(): Promise<Note[]> {
 export async function loadTags(): Promise<Tag[]> {
   const { data, error } = await supabase
     .from('tags')
-    .select('*')
-    .order('name');
+    .select('client_id, name, color')
+    .order('name')
+    .limit(TAGS_LIMIT);
 
   if (error) {
     console.error('Error loading tags:', error);
@@ -95,27 +101,43 @@ export async function deleteTag(id: string): Promise<void> {
 }
 
 export function subscribeToNotes(callback: (notes: Note[]) => void): () => void {
+  // Debounce rapid realtime events into a single refetch
+  let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+  const DEBOUNCE_MS = 500;
+
   const channel = supabase
     .channel('notes-changes')
     .on('postgres_changes', { event: '*', schema: 'public', table: 'notes' }, () => {
-      loadNotes().then(callback);
+      if (debounceTimer) clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => {
+        loadNotes().then(callback);
+      }, DEBOUNCE_MS);
     })
     .subscribe();
 
   return () => {
+    if (debounceTimer) clearTimeout(debounceTimer);
     supabase.removeChannel(channel);
   };
 }
 
 export function subscribeToTags(callback: (tags: Tag[]) => void): () => void {
+  // Debounce rapid realtime events into a single refetch
+  let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+  const DEBOUNCE_MS = 500;
+
   const channel = supabase
     .channel('tags-changes')
     .on('postgres_changes', { event: '*', schema: 'public', table: 'tags' }, () => {
-      loadTags().then(callback);
+      if (debounceTimer) clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => {
+        loadTags().then(callback);
+      }, DEBOUNCE_MS);
     })
     .subscribe();
 
   return () => {
+    if (debounceTimer) clearTimeout(debounceTimer);
     supabase.removeChannel(channel);
   };
 }

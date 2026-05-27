@@ -1,6 +1,6 @@
 'use client';
 
-import React, { createContext, useContext, useReducer, useEffect, useCallback, useRef } from 'react';
+import React, { createContext, useContext, useReducer, useEffect, useCallback, useMemo, useRef } from 'react';
 import { AppState, AppAction, Note, Tag, PALETTE } from '@/types';
 import { loadNotes, loadTags, seedIfEmpty, subscribeToNotes, subscribeToTags, updateNote as sbUpdateNote, deleteTag as sbDeleteTag } from '@/lib/supabase';
 
@@ -180,7 +180,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     };
   }, []);
 
-  const getFilteredNotes = useCallback((): Note[] => {
+  // Memoize filtered notes — recalculates only when dependencies change, not on every render
+  const filteredNotes = useMemo((): Note[] => {
     const { notes, currentFilter, activeTagFilters, sortMode, searchQuery, customFrom, customTo } = state;
     const now = Date.now();
 
@@ -243,7 +244,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }
 
     return filtered;
-  }, [state]);
+  }, [state.notes, state.currentFilter, state.activeTagFilters, state.sortMode, state.searchQuery, state.customFrom, state.customTo]);
+
+  // getFilteredNotes returns the memoized result (no re-computation on every render)
+  const getFilteredNotes = useCallback((): Note[] => filteredNotes, [filteredNotes]);
 
   const getTag = useCallback(
     (id: string): Tag | undefined => {
@@ -260,50 +264,56 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     [getTag]
   );
 
+  // Consolidate countFor: reuse memoized filteredNotes instead of re-running filter logic
   const countFor = useCallback(
     (filter: AppState['currentFilter']): number => {
-    const { notes, customFrom, customTo } = state;
-    const now = Date.now();
-    let filtered = [...notes];
+      if (filter === state.currentFilter) {
+        // Same filter as currently displayed — return memoized count
+        return filteredNotes.length;
+      }
+      // Different filter — compute only for that specific filter
+      const { notes, customFrom, customTo } = state;
+      const now = Date.now();
+      let filtered = [...notes];
 
-    if (filter === 'today') {
-      const start = new Date(now);
-      start.setHours(0, 0, 0, 0);
-      filtered = filtered.filter(n => n.created >= start.getTime());
-    } else if (filter === 'week') {
-      const start = new Date(now);
-      start.setHours(0, 0, 0, 0);
-      start.setDate(start.getDate() - start.getDay());
-      filtered = filtered.filter(n => n.created >= start.getTime());
-    } else if (filter === 'month') {
-      const start = new Date(now);
-      start.setHours(0, 0, 0, 0);
-      start.setDate(1);
-      filtered = filtered.filter(n => n.created >= start.getTime());
-    } else if (filter === 'quarter') {
-      const start = new Date(now);
-      start.setHours(0, 0, 0, 0);
-      start.setMonth(Math.floor(start.getMonth() / 3) * 3, 1);
-      filtered = filtered.filter(n => n.created >= start.getTime());
-    } else if (filter === 'year') {
-      const start = new Date(now);
-      start.setHours(0, 0, 0, 0);
-      start.setMonth(0, 1);
-      filtered = filtered.filter(n => n.created >= start.getTime());
-    } else if (filter === 'custom' && (customFrom || customTo)) {
-      filtered = filtered.filter(n => {
-        const d = new Date(n.created);
-        d.setHours(0, 0, 0, 0);
-        const dayStart = d.getTime();
-        if (customFrom && dayStart < customFrom) return false;
-        if (customTo && dayStart > customTo) return false;
-        return true;
-      });
-    }
+      if (filter === 'today') {
+        const start = new Date(now);
+        start.setHours(0, 0, 0, 0);
+        filtered = filtered.filter(n => n.created >= start.getTime());
+      } else if (filter === 'week') {
+        const start = new Date(now);
+        start.setHours(0, 0, 0, 0);
+        start.setDate(start.getDate() - start.getDay());
+        filtered = filtered.filter(n => n.created >= start.getTime());
+      } else if (filter === 'month') {
+        const start = new Date(now);
+        start.setHours(0, 0, 0, 0);
+        start.setDate(1);
+        filtered = filtered.filter(n => n.created >= start.getTime());
+      } else if (filter === 'quarter') {
+        const start = new Date(now);
+        start.setHours(0, 0, 0, 0);
+        start.setMonth(Math.floor(start.getMonth() / 3) * 3, 1);
+        filtered = filtered.filter(n => n.created >= start.getTime());
+      } else if (filter === 'year') {
+        const start = new Date(now);
+        start.setHours(0, 0, 0, 0);
+        start.setMonth(0, 1);
+        filtered = filtered.filter(n => n.created >= start.getTime());
+      } else if (filter === 'custom' && (customFrom || customTo)) {
+        filtered = filtered.filter(n => {
+          const d = new Date(n.created);
+          d.setHours(0, 0, 0, 0);
+          const dayStart = d.getTime();
+          if (customFrom && dayStart < customFrom) return false;
+          if (customTo && dayStart > customTo) return false;
+          return true;
+        });
+      }
 
-    return filtered.length;
-  },
-    [state]
+      return filtered.length;
+    },
+    [state, filteredNotes]
   );
 
   return (

@@ -466,6 +466,12 @@ body {
 .editor-preview h1 { font-family: var(--font-syne), 'Syne', sans-serif; font-size: 22px; font-weight: 700; margin: 1em 0 0.5em; letter-spacing: -0.02em; }
 .editor-preview h2 { font-family: var(--font-syne), 'Syne', sans-serif; font-size: 18px; font-weight: 700; margin: 0.8em 0 0.4em; letter-spacing: -0.01em; }
 .editor-preview h3 { font-family: var(--font-syne), 'Syne', sans-serif; font-size: 15px; font-weight: 700; margin: 0.6em 0 0.3em; }
+.editor-preview table { width: 100%; border-collapse: collapse; margin: 1em 0; font-size: 14px; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
+.editor-preview thead { background: var(--surface2); }
+.editor-preview th { font-family: var(--font-syne), 'Syne', sans-serif; font-size: 12px; font-weight: 700; text-align: left; padding: 8px 12px; border-bottom: 2px solid var(--border); letter-spacing: 0.02em; color: var(--text); }
+.editor-preview td { padding: 6px 12px; border-bottom: 1px solid var(--border); color: var(--text); vertical-align: top; }
+.editor-preview tr:last-child td { border-bottom: none; }
+.editor-preview th strong, .editor-preview td strong { font-weight: 700; }
 
 /* ── Text selection highlight (Kindle yellow) in preview ── */
 .editor-preview ::selection { background: #fef08a; color: inherit; }

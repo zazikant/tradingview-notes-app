@@ -11,9 +11,73 @@ interface EditorProps {
   onSave: () => void;
 }
 
+/** Apply inline formatting to a string (bold, italic, strikethrough, highlight, links). */
+function applyInline(text: string): string {
+  let t = text;
+  t = t.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+  t = t.replace(/__(.+?)__/g, '<strong>$1</strong>');
+  t = t.replace(/(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)/g, '<em>$1</em>');
+  t = t.replace(/(?<!_)_(?!_)(.+?)(?<!_)_(?!_)/g, '<em>$1</em>');
+  t = t.replace(/~~(.+?)~~/g, '<del>$1</del>');
+  t = t.replace(/==(.+?)==/g, '<mark>$1</mark>');
+  t = t.replace(/\[(.+?)\]\((.+?)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
+  return t;
+}
+
+/** Parse markdown table lines into an HTML table string. */
+function renderTableBlock(tableLines: string[]): string {
+  // A separator row matches: | --- | --- | (dashes and colons only between pipes)
+  const isSeparator = (line: string) => /^\|[\s\-:]+\|/.test(line);
+
+  // Split a pipe-delimited line into cell values
+  const splitRow = (line: string): string[] => {
+    return line.split('|').slice(1, -1).map(cell => cell.trim());
+  };
+
+  let headerRow: string[] | null = null;
+  const bodyRows: string[][] = [];
+
+  for (const line of tableLines) {
+    if (isSeparator(line)) continue; // skip separator
+    const cells = splitRow(line);
+    if (!headerRow) {
+      headerRow = cells;
+    } else {
+      bodyRows.push(cells);
+    }
+  }
+
+  if (!headerRow) return ''; // no header found
+
+  const colCount = headerRow.length;
+  const escapeCell = (c: string) => c.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+  let html = '<table><thead><tr>';
+  for (const h of headerRow) {
+    html += `<th>${applyInline(escapeCell(h))}</th>`;
+  }
+  html += '</tr></thead>';
+
+  if (bodyRows.length > 0) {
+    html += '<tbody>';
+    for (const row of bodyRows) {
+      html += '<tr>';
+      for (let i = 0; i < colCount; i++) {
+        html += `<td>${applyInline(escapeCell(row[i] || ''))}</td>`;
+      }
+      html += '</tr>';
+    }
+    html += '</tbody>';
+  }
+
+  html += '</table>';
+  return html;
+}
+
 /** Simple markdown → HTML renderer for preview mode
  *  Keeps the raw text layout (numbers, bullets, indentation) exactly as typed.
- *  Only applies inline formatting: bold, italic, strikethrough, highlight, links, headings. */
+ *  Applies inline formatting: bold, italic, strikethrough, highlight, links, headings.
+ *  Supports markdown tables: | Header | Header | / |---|---| / | Cell | Cell | */
 function renderMarkdown(text: string): string {
   // Apply renumber first so preview always shows clean sequential numbers
   const renumbered = renumberLists(text);
@@ -21,7 +85,21 @@ function renderMarkdown(text: string): string {
   const lines = renumbered.split('\n');
   const output: string[] = [];
 
-  for (const rawLine of lines) {
+  let i = 0;
+  while (i < lines.length) {
+    const rawLine = lines[i];
+
+    // ── Table block: consecutive lines starting with '|' ──
+    if (rawLine.trimStart().startsWith('|')) {
+      const tableLines: string[] = [];
+      while (i < lines.length && lines[i].trimStart().startsWith('|')) {
+        tableLines.push(lines[i]);
+        i++;
+      }
+      output.push(renderTableBlock(tableLines));
+      continue;
+    }
+
     let line = rawLine;
     // Escape HTML
     line = line.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -31,33 +109,14 @@ function renderMarkdown(text: string): string {
     if (headingMatch) {
       const level = headingMatch[1].length;
       const content = line.replace(/^#{1,3}\s+/, '');
-      // Process inline formatting inside headings too
-      let headingContent = content;
-      headingContent = headingContent.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
-      headingContent = headingContent.replace(/__(.+?)__/g, '<strong>$1</strong>');
-      headingContent = headingContent.replace(/(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)/g, '<em>$1</em>');
-      headingContent = headingContent.replace(/(?<!_)_(?!_)(.+?)(?<!_)_(?!_)/g, '<em>$1</em>');
-      headingContent = headingContent.replace(/~~(.+?)~~/g, '<del>$1</del>');
-      headingContent = headingContent.replace(/==(.+?)==/g, '<mark>$1</mark>');
-      headingContent = headingContent.replace(/\[(.+?)\]\((.+?)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
-      output.push(`<h${level}>${headingContent}</h${level}>`);
+      output.push(`<h${level}>${applyInline(content)}</h${level}>`);
+      i++;
       continue;
     }
 
-    // Bold: **text** or __text__
-    line = line.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
-    line = line.replace(/__(.+?)__/g, '<strong>$1</strong>');
-    // Italic: *text* or _text_
-    line = line.replace(/(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)/g, '<em>$1</em>');
-    line = line.replace(/(?<!_)_(?!_)(.+?)(?<!_)_(?!_)/g, '<em>$1</em>');
-    // Strikethrough: ~~text~~
-    line = line.replace(/~~(.+?)~~/g, '<del>$1</del>');
-    // Highlight: ==text==
-    line = line.replace(/==(.+?)==/g, '<mark>$1</mark>');
-    // Links: [text](url)
-    line = line.replace(/\[(.+?)\]\((.+?)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
-
-    output.push(line);
+    // Regular line with inline formatting
+    output.push(applyInline(line));
+    i++;
   }
 
   // Join: double newline → paragraph break, single newline → <br>
@@ -72,6 +131,9 @@ function renderMarkdown(text: string): string {
   html = html.replace(/<p>\s*<\/p>/g, '');
   html = html.replace(/<p>\s*(<h[1-3]>)/g, '$1');
   html = html.replace(/(<\/h[1-3]>)\s*<\/p>/g, '$1');
+  // Don't wrap tables in <p>
+  html = html.replace(/<p>\s*(<table>)/g, '$1');
+  html = html.replace(/(<\/table>)\s*<\/p>/g, '$1');
 
   return html;
 }
@@ -257,6 +319,34 @@ export function Editor({ onCopy, onDelete, onSave }: EditorProps) {
     }, 0);
   }, [updateCurrentNote, scheduleAutoSave]);
 
+  const applyTable = useCallback(() => {
+    const ta = textareaRef.current;
+    if (!ta) return;
+    const start = ta.selectionStart;
+    const colsStr = prompt('Number of columns:', '3');
+    if (!colsStr) return;
+    const cols = Math.max(2, Math.min(parseInt(colsStr, 10) || 3, 10));
+    const rowsStr = prompt('Number of rows (excluding header):', '2');
+    if (!rowsStr) return;
+    const rows = Math.max(1, Math.min(parseInt(rowsStr, 10) || 2, 20));
+    // Build markdown table
+    const header = '| ' + Array.from({ length: cols }, (_, i) => `Col ${i + 1}`).join(' | ') + ' |';
+    const separator = '| ' + Array.from({ length: cols }, () => '---').join(' | ') + ' |';
+    const bodyLines = Array.from({ length: rows }, () =>
+      '| ' + Array.from({ length: cols }, () => '').join(' | ') + ' |'
+    );
+    const table = [header, separator, ...bodyLines].join('\n');
+    const newText = ta.value.substring(0, start) + table + ta.value.substring(start);
+    updateCurrentNote({ body: newText });
+    scheduleAutoSave();
+    setTimeout(() => {
+      // Place cursor at first empty cell
+      const firstCellPos = start + header.length + 1 + separator.length + 1 + '| '.length;
+      ta.setSelectionRange(firstCellPos, firstCellPos);
+      ta.focus();
+    }, 0);
+  }, [updateCurrentNote, scheduleAutoSave]);
+
   const applyList = useCallback(() => {
     const ta = textareaRef.current;
     if (!ta) return;
@@ -423,7 +513,8 @@ export function Editor({ onCopy, onDelete, onSave }: EditorProps) {
     if ((e.metaKey || e.ctrlKey) && e.key === 'k') { e.preventDefault(); e.stopPropagation(); applyLink(); return; }
     if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key === 'L') { e.preventDefault(); e.stopPropagation(); applyList(); return; }
     if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key === 'U') { e.preventDefault(); e.stopPropagation(); applyBulletList(); return; }
-  }, [applyBold, applyItalic, applyStrikethrough, applyHeading, applyHighlight, applyLink, applyList, applyBulletList, updateCurrentNote, scheduleAutoSave, scrollCursorIntoView]);
+    if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key === 'T') { e.preventDefault(); e.stopPropagation(); applyTable(); return; }
+  }, [applyBold, applyItalic, applyStrikethrough, applyHeading, applyHighlight, applyLink, applyTable, applyList, applyBulletList, updateCurrentNote, scheduleAutoSave, scrollCursorIntoView]);
 
 
 
@@ -572,6 +663,14 @@ export function Editor({ onCopy, onDelete, onSave }: EditorProps) {
             >
               <span style={{ fontFamily: 'monospace' }}>&#8226;</span>
             </button>
+            <button
+              className="fmt-btn"
+              title="Table (Ctrl+Shift+T)"
+              onMouseDown={e => e.preventDefault()}
+              onClick={() => applyTable()}
+            >
+              <span style={{ fontFamily: 'monospace', fontSize: '13px' }}>&#9638;&#9638;</span>
+            </button>
             <div className="fmt-separator" />
           </>)}
           {/* Edit / Done toggle button — always visible */}
@@ -628,7 +727,7 @@ export function Editor({ onCopy, onDelete, onSave }: EditorProps) {
           <textarea
             ref={textareaRef}
             className="editor-textarea"
-            placeholder="Write your analysis, observations, trade rationale…&#10;&#10;Formatting: **bold**, _italic_, ~~strikethrough~~, ==highlight==, [link](url)&#10;1. or - then Enter = auto-continue list&#10;Ctrl+B Bold | Ctrl+I Italic | Ctrl+H Heading | Ctrl+K Link | Ctrl+Shift+H Highlight"
+            placeholder="Write your analysis, observations, trade rationale…&#10;&#10;Formatting: **bold**, _italic_, ~~strikethrough~~, ==highlight==, [link](url)&#10;Tables: | Header | Header | / |---|---| / | Cell | Cell |&#10;1. or - then Enter = auto-continue list&#10;Ctrl+B Bold | Ctrl+I Italic | Ctrl+H Heading | Ctrl+K Link | Ctrl+Shift+H Highlight | Ctrl+Shift+T Table"
             value={activeNote.body}
             onChange={e => {
               updateCurrentNote({ body: e.target.value });

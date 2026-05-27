@@ -408,6 +408,101 @@ body {
 .editor-tag-btn.on { border-color: transparent; }
 .editor-tag-btn .etag-dot { width: 6px; height: 6px; border-radius: 50%; }
 
+/* ─── Tag Picker (shown when > 10 tags) ─── */
+.tag-picker-container { position: relative; flex-shrink: 0; }
+.tag-picker-add-btn {
+  font-family: var(--font-syne), 'Syne', sans-serif;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 5px;
+  border: 1px dashed var(--border);
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  transition: all 0.15s;
+  letter-spacing: 0.03em;
+}
+.tag-picker-add-btn:hover { border-color: var(--muted); color: var(--text); background: var(--surface2); }
+
+.tag-picker-dropdown {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 200;
+  min-width: 240px;
+  max-width: 340px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.3);
+  padding: 8px;
+  animation: tagPickerIn 0.15s ease-out;
+}
+@keyframes tagPickerIn {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.tag-picker-search {
+  width: 100%;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-family: var(--font-epilogue), Epilogue, sans-serif;
+  font-size: 12px;
+  color: var(--text);
+  outline: none;
+  margin-bottom: 6px;
+}
+.tag-picker-search:focus { border-color: var(--muted); }
+.tag-picker-search::placeholder { color: var(--border); }
+.tag-picker-list {
+  max-height: 220px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  -webkit-overflow-scrolling: touch;
+}
+.tag-picker-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  text-align: left;
+  font-family: var(--font-syne), 'Syne', sans-serif;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 6px 10px;
+  border-radius: 5px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  transition: all 0.12s;
+}
+.tag-picker-item:hover { background: var(--surface2); color: var(--text); }
+.tag-picker-item.on { border-color: transparent; }
+.tag-picker-item-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tag-picker-check { margin-left: auto; font-size: 11px; opacity: 0.7; flex-shrink: 0; }
+.tag-picker-empty {
+  font-family: var(--font-epilogue), Epilogue, sans-serif;
+  font-size: 11px;
+  color: var(--border);
+  padding: 12px 8px;
+  text-align: center;
+}
+.tag-picker-footer {
+  font-family: var(--font-epilogue), Epilogue, sans-serif;
+  font-size: 10px;
+  color: var(--border);
+  padding: 6px 4px 2px;
+  text-align: center;
+  border-top: 1px solid var(--border);
+  margin-top: 4px;
+}
+
 .editor-body { flex: 1; min-height: 0; overflow: hidden; padding: 0; position: relative; }
 .editor-textarea { width: 100%; height: 100%; position: absolute; top: 0; left: 0; right: 0; bottom: 0; padding: 1.5rem; padding-bottom: 4rem; background: transparent; border: none; outline: none; font-family: var(--font-epilogue), 'Epilogue', sans-serif; font-size: 15px; line-height: 1.8; color: var(--text); resize: none; overflow-y: auto; -webkit-overflow-scrolling: touch; }
 .editor-textarea::placeholder { color: var(--border); }

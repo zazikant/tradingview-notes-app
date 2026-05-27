@@ -4,6 +4,7 @@ import { useRef, useCallback, useState, useEffect } from 'react';
 import { useNotes } from '@/hooks/useNotes';
 import { usePullToRefresh } from '@/hooks/usePullToRefresh';
 import { PALETTE } from '@/types';
+import { TagPicker } from '@/components/TagPicker';
 
 interface EditorProps {
   onCopy: () => void;
@@ -616,28 +617,37 @@ export function Editor({ onCopy, onDelete, onSave }: EditorProps) {
           })}
         </div>
       </div>
-      <div className="editor-tags-bar">
-        <span className="tags-label">Tags</span>
-        {tags.map(tag => {
-          const c = PALETTE[tag.color] || PALETTE[0];
-          const isOn = activeNote.tags.includes(tag.id);
-          return (
-            <button
-              key={tag.id}
-              className={`editor-tag-btn ${isOn ? 'on' : ''}`}
-              onClick={() => toggleEditorTag(tag.id)}
-              style={
-                isOn
-                  ? { background: c.bg, color: c.text, borderColor: c.border }
-                  : {}
-              }
-            >
-              <span className="etag-dot" style={{ background: c.dot }}></span>
-              {tag.name}
-            </button>
-          );
-        })}
-      </div>
+      {/* Tags bar: simple buttons for ≤10 tags, searchable picker for >10 */}
+      {tags.length <= 10 ? (
+        <div className="editor-tags-bar">
+          <span className="tags-label">Tags</span>
+          {tags.map(tag => {
+            const c = PALETTE[tag.color] || PALETTE[0];
+            const isOn = activeNote.tags.includes(tag.id);
+            return (
+              <button
+                key={tag.id}
+                className={`editor-tag-btn ${isOn ? 'on' : ''}`}
+                onClick={() => toggleEditorTag(tag.id)}
+                style={
+                  isOn
+                    ? { background: c.bg, color: c.text, borderColor: c.border }
+                    : {}
+                }
+              >
+                <span className="etag-dot" style={{ background: c.dot }}></span>
+                {tag.name}
+              </button>
+            );
+          })}
+        </div>
+      ) : (
+        <TagPicker
+          tags={tags}
+          activeTagIds={activeNote.tags}
+          onToggleTag={toggleEditorTag}
+        />
+      )}
       {/* Toolbar: format buttons + action buttons all in one bar */}
       <div className="editor-toolbar">
         <div className="editor-toolbar-left">

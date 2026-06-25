@@ -750,9 +750,13 @@ export function Editor({ onCopy, onDelete, onSave }: EditorProps) {
             onMouseDown={e => e.preventDefault()}
             onClick={() => {
               if (isEditing) {
+                // Compute renumbered body from the CURRENT note and pass it as
+                // an override to saveCurrentNote, which will merge it onto the
+                // freshest note and persist in the same tick. This avoids the
+                // previous dispatch-then-save race where saveCurrentNote read
+                // a stale `state.notes` and clobbered the freshly-typed body.
                 const renumbered = renumberLists(activeNote.body);
-                updateCurrentNote({ body: renumbered });
-                saveCurrentNote();
+                saveCurrentNote({ body: renumbered });
                 onSave();
               }
               setIsEditing(!isEditing);
@@ -779,7 +783,7 @@ export function Editor({ onCopy, onDelete, onSave }: EditorProps) {
           }}>Download</button>
           <button className="fmt-btn fmt-btn-action" title="Copy note" onClick={onCopy}>Copy</button>
           <button className="fmt-btn fmt-btn-danger" title="Delete note" onClick={onDelete}>Delete</button>
-          <button className={`fmt-btn fmt-btn-save ${isDirty() ? 'fmt-btn-dirty' : ''}`} title="Save note (Ctrl+S)" onClick={async () => { const renumbered = renumberLists(activeNote.body); updateCurrentNote({ body: renumbered }); await saveCurrentNote(); onSave(); }}>{isDirty() ? 'Save •' : 'Saved'}</button>
+          <button className={`fmt-btn fmt-btn-save ${isDirty() ? 'fmt-btn-dirty' : ''}`} title="Save note (Ctrl+S)" onClick={async () => { const renumbered = renumberLists(activeNote.body); await saveCurrentNote({ body: renumbered }); onSave(); }}>{isDirty() ? 'Save •' : 'Saved'}</button>
         </div>
       </div>
       <div className="editor-body" ref={setEditorBodyRef}>

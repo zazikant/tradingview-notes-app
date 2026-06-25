@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useRef } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import { useAppContext } from '@/context/AppContext';
 import { Note, Tag, AppState } from '@/types';
 import { uid, fullDate, exportNotesToCSV, parseNotesFromCSV, parseCSVRows } from '@/lib/utils';
@@ -11,6 +11,17 @@ export function useNotes() {
   const autoSaveTimer = useRef<NodeJS.Timeout | null>(null);
   const isDirty = useRef(false);
   const lastSavedNote = useRef<string>('');
+
+  // Always-fresh mirror of state.notes. The save handlers below are invoked
+  // synchronously right after a dispatch (e.g. Save button → updateCurrentNote
+  // → saveCurrentNote), and React's `state.notes` in the useCallback closure
+  // is still stale at that point. Reading from this ref avoids clobbering the
+  // freshly-typed body with an older snapshot — which was the cause of large
+  // pasted text disappearing on Save.
+  const latestNotesRef = useRef<Note[]>(state.notes);
+  useEffect(() => {
+    latestNotesRef.current = state.notes;
+  }, [state.notes]);
 
   const activeNote = state.notes.find(n => n.id === state.activeId) || null;
 
@@ -57,7 +68,11 @@ export function useNotes() {
   const updateCurrentNote = useCallback(
     (updates: Partial<Pick<Note, 'ticker' | 'body' | 'tags'>>) => {
       if (!state.activeId) return;
-      const note = state.notes.find(n => n.id === state.activeId);
+      // Read from the ref so we always merge onto the freshest note, even
+      // when called multiple times in the same tick (e.g. when the Save
+      // button dispatches a renumbered body and immediately calls
+      // saveCurrentNote).
+      const note = latestNotesRef.current.find(n => n.id === state.activeId);
       if (!note) return;
 
       const updated: Note = {
@@ -69,15 +84,26 @@ export function useNotes() {
       // Mark as dirty since we changed local state without persisting
       isDirty.current = true;
 
+      // Keep the ref in sync immediately so a subsequent saveCurrentNote()
+      // in the same tick sees the updated note.
+      latestNotesRef.current = latestNotesRef.current.map(n =>
+        n.id === updated.id ? updated : n
+      );
+
       dispatch({ type: 'UPDATE_NOTE', payload: updated });
     },
-    [state.activeId, state.notes, dispatch]
+    [state.activeId, dispatch]
   );
 
-  // Explicitly save the current note to Supabase
-  const saveCurrentNote = useCallback(async () => {
+  // Explicitly save the current note to Supabase.
+  // `overrides` (optional) is merged onto the freshest note before saving —
+  // use this when the caller has computed a final body (e.g. renumbered)
+  // and wants to persist it in the same tick without waiting for a re-render.
+  const saveCurrentNote = useCallback(async (
+    overrides?: Partial<Pick<Note, 'ticker' | 'body' | 'tags'>>
+  ) => {
     if (!state.activeId) return;
-    const note = state.notes.find(n => n.id === state.activeId);
+    const note = latestNotesRef.current.find(n => n.id === state.activeId);
     if (!note) return;
 
     // Clear any pending auto-save
@@ -86,16 +112,28 @@ export function useNotes() {
       autoSaveTimer.current = null;
     }
 
+    // Apply overrides (if any) onto the freshest note BEFORE stamping/persist.
+    const merged: Note = overrides
+      ? { ...note, ...overrides, ticker: overrides.ticker !== undefined ? overrides.ticker : note.ticker }
+      : note;
+
     // Stamp `updated` on local state BEFORE persisting so the list re-sorts
     // immediately (newest = most-recently-edited first).
     const now = Date.now();
-    const stamped = { ...note, updated: now };
+    const stamped = { ...merged, updated: now };
+
+    // Keep the ref in sync immediately so any subsequent read (e.g. a second
+    // saveCurrentNote in the same tick) sees the stamped note.
+    latestNotesRef.current = latestNotesRef.current.map(n =>
+      n.id === stamped.id ? stamped : n
+    );
+
     dispatch({ type: 'UPDATE_NOTE', payload: stamped });
 
     await sbUpdateNote(stamped);
     isDirty.current = false;
     lastSavedNote.current = JSON.stringify(stamped);
-  }, [state.activeId, state.notes]);
+  }, [state.activeId]);
 
   // Schedule a debounced auto-save — only persists if dirty
   const scheduleAutoSave = useCallback(() => {
@@ -104,11 +142,18 @@ export function useNotes() {
     }
     autoSaveTimer.current = setTimeout(async () => {
       if (state.activeId && isDirty.current) {
-        const note = state.notes.find(n => n.id === state.activeId);
+        // Read from the ref so we persist the freshest note, not the stale
+        // closure snapshot from when scheduleAutoSave was created.
+        const note = latestNotesRef.current.find(n => n.id === state.activeId);
         if (note) {
           // Stamp `updated` locally before persisting so the list re-sorts.
           const now = Date.now();
           const stamped = { ...note, updated: now };
+
+          latestNotesRef.current = latestNotesRef.current.map(n =>
+            n.id === stamped.id ? stamped : n
+          );
+
           dispatch({ type: 'UPDATE_NOTE', payload: stamped });
           await sbUpdateNote(stamped);
           isDirty.current = false;
@@ -116,7 +161,7 @@ export function useNotes() {
         }
       }
     }, 2000); // 2 second debounce — longer than before to let user type freely
-  }, [state.activeId, state.notes]);
+  }, [state.activeId]);
 
   // Discard unsaved changes — revert to last saved state
   const discardChanges = useCallback(() => {
@@ -131,6 +176,10 @@ export function useNotes() {
     try {
       const saved = JSON.parse(lastSavedNote.current) as Note;
       if (saved && saved.id === state.activeId) {
+        // Keep the ref in sync so subsequent saves see the reverted note.
+        latestNotesRef.current = latestNotesRef.current.map(n =>
+          n.id === saved.id ? saved : n
+        );
         dispatch({ type: 'UPDATE_NOTE', payload: saved });
         isDirty.current = false;
       }
@@ -164,7 +213,7 @@ export function useNotes() {
   const toggleEditorTag = useCallback(
     async (tagId: string) => {
       if (!state.activeId) return;
-      const note = state.notes.find(n => n.id === state.activeId);
+      const note = latestNotesRef.current.find(n => n.id === state.activeId);
       if (!note) return;
 
       const newTags = note.tags.includes(tagId)
@@ -176,12 +225,16 @@ export function useNotes() {
       const now = Date.now();
       const updated = { ...note, tags: newTags, updated: now };
 
+      latestNotesRef.current = latestNotesRef.current.map(n =>
+        n.id === updated.id ? updated : n
+      );
+
       dispatch({ type: 'UPDATE_NOTE', payload: updated });
       await sbUpdateNote(updated);
       isDirty.current = false;
       lastSavedNote.current = JSON.stringify(updated);
     },
-    [state.activeId, state.notes, dispatch]
+    [state.activeId, dispatch]
   );
 
   const exportAllNotes = useCallback(() => {

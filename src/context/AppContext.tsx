@@ -127,10 +127,14 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         return n;
       });
 
-      // Persist cleaned notes to Supabase
+      // Persist cleaned notes to Supabase.
+      // Use a Map keyed by note id for O(1) lookup instead of `notes.find()`
+      // inside the loop — at 50k notes the previous O(n²) lookup was a
+      // multi-second startup freeze.
       if (notesNeedCleanup) {
+        const originalById = new Map(notes.map(n => [n.id, n]));
         for (const note of cleanedNotes) {
-          const original = notes.find(n => n.id === note.id);
+          const original = originalById.get(note.id);
           if (original && original.tags.length !== note.tags.length) {
             await sbUpdateNote(note);
           }

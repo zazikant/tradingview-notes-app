@@ -6,8 +6,11 @@ const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'eyJhbGci
 
 export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-// Safety limit: prevents accidental massive payloads
-const NOTES_LIMIT = 5000;
+// Safety limit: prevents accidental massive payloads. Raised to 50k to support
+// large note collections; beyond this, switch to cursor-based pagination
+// (Path B). Each note row is small (~200 bytes body + tags), so 50k ≈ 10MB —
+// well within browser memory.
+const NOTES_LIMIT = 50000;
 const TAGS_LIMIT = 500;
 
 export async function loadNotes(): Promise<Note[]> {
@@ -51,8 +54,20 @@ export async function loadTags(): Promise<Tag[]> {
   }));
 }
 
+// Track the timestamp of the most recent local write (add/update/delete) so
+// the realtime subscription can skip refetching when the event was caused by
+// this same client. At scale (50k notes) a full refetch on every own-save is
+// wasteful — the optimistic dispatch already keeps local state in sync.
+let lastLocalWriteAt = 0;
+const LOCAL_WRITE_GRACE_MS = 1500;
+
+export function _markLocalWrite(): void {
+  lastLocalWriteAt = Date.now();
+}
+
 export async function addNote(note: Note): Promise<void> {
   const now = note.updated ?? Date.now();
+  _markLocalWrite();
   const { error } = await supabase.from('notes').insert({
     client_id: note.id,
     ticker: note.ticker,
@@ -66,6 +81,7 @@ export async function addNote(note: Note): Promise<void> {
 }
 
 export async function updateNote(note: Note): Promise<void> {
+  _markLocalWrite();
   const now = Date.now();
   const { error } = await supabase
     .from('notes')
@@ -82,6 +98,7 @@ export async function updateNote(note: Note): Promise<void> {
 }
 
 export async function deleteNote(id: string): Promise<void> {
+  _markLocalWrite();
   const { error } = await supabase.from('notes').delete().eq('client_id', id);
   if (error) console.error('Error deleting note:', error);
 }
@@ -121,6 +138,13 @@ export function subscribeToNotes(callback: (notes: Note[]) => void): () => void 
   const channel = supabase
     .channel('notes-changes')
     .on('postgres_changes', { event: '*', schema: 'public', table: 'notes' }, () => {
+      // Skip the refetch if THIS client caused the write — the optimistic
+      // dispatch already updated local state, and refetching 50k rows on
+      // every own-save is wasteful. The grace window covers the round-trip
+      // latency between our write and the realtime echo.
+      if (Date.now() - lastLocalWriteAt < LOCAL_WRITE_GRACE_MS) {
+        return;
+      }
       if (debounceTimer) clearTimeout(debounceTimer);
       debounceTimer = setTimeout(() => {
         loadNotes().then(callback);

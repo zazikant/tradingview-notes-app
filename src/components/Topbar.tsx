@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef } from 'react';
+import { useRef, useState, useEffect } from 'react';
 import { useNotes } from '@/hooks/useNotes';
 import { ToastManager, showToast } from '@/components/Toast';
 
@@ -13,6 +13,32 @@ export function Topbar({ onDelete, onNew }: TopbarProps) {
   const { searchQuery, setSearchQuery, mobilePanel, setMobilePanel, exportAllNotes, importNotesFromCSV, deleteMatchingNotes } = useNotes();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const deleteInputRef = useRef<HTMLInputElement>(null);
+
+  // Local input value mirrors the global searchQuery but updates instantly;
+  // the global state is only dispatched after the user pauses typing, so the
+  // expensive filter+sort over (potentially 50k) notes doesn't run per keystroke.
+  const [searchInput, setSearchInput] = useState(searchQuery);
+  const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Keep local input in sync if searchQuery changes externally (e.g. cleared).
+  useEffect(() => {
+    setSearchInput(searchQuery);
+  }, [searchQuery]);
+
+  const handleSearchChange = (value: string) => {
+    setSearchInput(value);
+    if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
+    searchDebounceRef.current = setTimeout(() => {
+      setSearchQuery(value);
+    }, 250);
+  };
+
+  // Cleanup debounce timer on unmount
+  useEffect(() => {
+    return () => {
+      if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
+    };
+  }, []);
 
   const handleImportClick = () => {
     fileInputRef.current?.click();
@@ -85,8 +111,8 @@ export function Topbar({ onDelete, onNew }: TopbarProps) {
         <input
           type="text"
           placeholder="Search ticker, notes…"
-          value={searchQuery}
-          onChange={e => setSearchQuery(e.target.value)}
+          value={searchInput}
+          onChange={e => handleSearchChange(e.target.value)}
         />
       </div>
       <div className="topbar-actions">

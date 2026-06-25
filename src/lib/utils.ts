@@ -284,12 +284,107 @@ export function exportNotesToCSV(notes: Note[], tags: Tag[]): void {
     return `"${escaped}"`;
   };
 
-  const rows = notes.map(note => {
-    // Skip tag IDs that no longer exist — don't leak raw IDs into CSV
+  // Excel hard limit: a single cell can hold at most 32,767 characters.
+  // If a note's body (after CSV escaping) exceeds this, Excel truncates the
+  // cell and the excess content spills into new rows — where commas split it
+  // across columns A, B, C, D… To prevent data loss, we split oversized bodies
+  // into multiple CSV rows, each with the same Date/Tags and a "(part N)"
+  // suffix on the ticker so the user can reassemble them.
+  //
+  // We escape the ENTIRE body first, then split the escaped string at
+  // paragraph (\r\n\r\n) or line (\r\n) boundaries. Because we only take
+  // substrings of the already-escaped text, no content is modified or lost.
+  const EXCEL_CELL_LIMIT = 32000;
+
+  const escapeForCsv = (text: string): string => {
+    return text.replace(/\r\n/g, '\n').replace(/\n/g, '\r\n').replace(/"/g, '""');
+  };
+
+  const splitBodyForExcel = (body: string): string[] => {
+    const escaped = escapeForCsv(body);
+    if (escaped.length <= EXCEL_CELL_LIMIT) {
+      return [escaped];
+    }
+
+    // Split at paragraph boundaries (\r\n\r\n) in the escaped text.
+    // We record the split positions so we can reconstruct exact substrings.
+    const paraBreaks: number[] = [];
+    for (let i = 0; i < escaped.length - 3; i++) {
+      if (escaped[i] === '\r' && escaped[i + 1] === '\n' &&
+          escaped[i + 2] === '\r' && escaped[i + 3] === '\n') {
+        paraBreaks.push(i + 4); // start of next paragraph
+      }
+    }
+
+    // Greedily accumulate paragraphs into chunks under the limit.
+    // Each chunk is a substring of `escaped` — no modification.
+    const chunks: string[] = [];
+    let chunkStart = 0;
+    let lastBreak = 0; // index into paraBreaks
+
+    for (let bi = 0; bi < paraBreaks.length; bi++) {
+      const paraStart = paraBreaks[bi];
+      // If adding this paragraph's content would exceed the limit, close the
+      // current chunk at the END of the previous paragraph (paraStart - 4,
+      // which strips the \r\n\r\n separator).
+      if (paraStart - chunkStart > EXCEL_CELL_LIMIT && lastBreak > 0) {
+        // Close chunk at the start of the current paragraph (exclusive of the
+        // \r\n\r\n separator that precedes it)
+        chunks.push(escaped.slice(chunkStart, paraBreaks[lastBreak - 1] - 4));
+        chunkStart = paraBreaks[lastBreak - 1];
+      }
+      lastBreak = bi + 1;
+    }
+
+    // Push the final chunk
+    if (chunkStart < escaped.length) {
+      // Check if the remaining content exceeds the limit — if so, we need
+      // to split at line boundaries (\r\n) within this chunk
+      const remaining = escaped.slice(chunkStart);
+      if (remaining.length <= EXCEL_CELL_LIMIT) {
+        chunks.push(remaining);
+      } else {
+        // Fall back to splitting at single \r\n boundaries
+        const lineBreaks: number[] = [];
+        for (let i = chunkStart; i < escaped.length - 1; i++) {
+          if (escaped[i] === '\r' && escaped[i + 1] === '\n') {
+            lineBreaks.push(i + 2);
+          }
+        }
+        let lineStart = chunkStart;
+        let lastLineBreak = 0;
+        for (let li = 0; li < lineBreaks.length; li++) {
+          const lineEnd = lineBreaks[li];
+          if (lineEnd - lineStart > EXCEL_CELL_LIMIT && lastLineBreak > 0) {
+            chunks.push(escaped.slice(lineStart, lineBreaks[lastLineBreak - 1]));
+            lineStart = lineBreaks[lastLineBreak - 1];
+          }
+          lastLineBreak = li + 1;
+        }
+        if (lineStart < escaped.length) {
+          chunks.push(escaped.slice(lineStart));
+        }
+      }
+    }
+
+    return chunks.length > 0 ? chunks : [escaped];
+  };
+
+  const rows: string[] = [];
+  for (const note of notes) {
     const tagNames = note.tags.map(id => tagMap.get(id)).filter(Boolean).join('; ');
     const date = fullDate(note.created);
-    return [csvField(note.ticker), csvField(date), csvField(tagNames), csvField(note.body)].join(',');
-  });
+    const bodyChunks = splitBodyForExcel(note.body);
+    if (bodyChunks.length === 1) {
+      rows.push([csvField(note.ticker), csvField(date), csvField(tagNames), `"${bodyChunks[0]}"`].join(','));
+    } else {
+      // Split across multiple rows with (part N) suffix on the ticker
+      bodyChunks.forEach((chunk, idx) => {
+        const partTicker = `${note.ticker} (part ${idx + 1}/${bodyChunks.length})`;
+        rows.push([csvField(partTicker), csvField(date), csvField(tagNames), `"${chunk}"`].join(','));
+      });
+    }
+  }
   const csv = [headers.join(','), ...rows].join('\r\n');
   const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
   const url = URL.createObjectURL(blob);

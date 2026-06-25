@@ -630,6 +630,7 @@ export function Editor({ onCopy, onDelete, onSave }: EditorProps) {
             day: 'numeric',
             month: 'long',
             year: 'numeric',
+            timeZone: 'Asia/Kolkata',
           })}
         </div>
       </div>

@@ -65,12 +65,21 @@ export function Sidebar({ onOpenRenameTag, onOpenDeleteTag }: SidebarProps) {
   }, [newTagName, selectedNewColor, tags, addTag]);
 
   // Handle custom range application
+  // Parse the YYYY-MM-DD picker values as IST (Asia/Kolkata, UTC+05:30) day
+  // boundaries so the filter means "IST day", not "browser-local day".
   const handleApplyCustomRange = useCallback(() => {
     const fromInput = document.getElementById('dateFrom') as HTMLInputElement;
     const toInput = document.getElementById('dateTo') as HTMLInputElement;
-    const from = fromInput?.value ? new Date(fromInput.value).setHours(0, 0, 0, 0) : null;
-    const to = toInput?.value ? new Date(toInput.value).setHours(23, 59, 59, 999) : null;
-    setCustomRange(from, to);
+    const from = fromInput?.value
+      ? Date.parse(`${fromInput.value}T00:00:00+05:30`)
+      : null;
+    const to = toInput?.value
+      ? Date.parse(`${toInput.value}T23:59:59.999+05:30`)
+      : null;
+    setCustomRange(
+      from === null ? null : Number(from),
+      to === null ? null : Number(to)
+    );
   }, [setCustomRange]);
 
   // Handle clearing custom range
@@ -106,41 +115,6 @@ export function Sidebar({ onOpenRenameTag, onOpenDeleteTag }: SidebarProps) {
         >
           <span className="filter-icon">📋</span> All notes{' '}
           <span className="count">{notes.length}</span>
-        </button>
-        <button
-          className={`filter-btn ${currentFilter === 'today' ? 'active' : ''}`}
-          onClick={() => setFilter('today')}
-        >
-          <span className="filter-icon">☀️</span> Today{' '}
-          <span className="count">{countFor('today')}</span>
-        </button>
-        <button
-          className={`filter-btn ${currentFilter === 'week' ? 'active' : ''}`}
-          onClick={() => setFilter('week')}
-        >
-          <span className="filter-icon">📅</span> This week{' '}
-          <span className="count">{countFor('week')}</span>
-        </button>
-        <button
-          className={`filter-btn ${currentFilter === 'month' ? 'active' : ''}`}
-          onClick={() => setFilter('month')}
-        >
-          <span className="filter-icon">🗓</span> This month{' '}
-          <span className="count">{countFor('month')}</span>
-        </button>
-        <button
-          className={`filter-btn ${currentFilter === 'quarter' ? 'active' : ''}`}
-          onClick={() => setFilter('quarter')}
-        >
-          <span className="filter-icon">📆</span> This quarter{' '}
-          <span className="count">{countFor('quarter')}</span>
-        </button>
-        <button
-          className={`filter-btn ${currentFilter === 'year' ? 'active' : ''}`}
-          onClick={() => setFilter('year')}
-        >
-          <span className="filter-icon">🗂</span> This year{' '}
-          <span className="count">{countFor('year')}</span>
         </button>
         <button
           className={`filter-btn ${currentFilter === 'custom' ? 'active' : ''}`}

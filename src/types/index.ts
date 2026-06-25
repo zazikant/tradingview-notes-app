@@ -15,7 +15,7 @@ export interface Note {
 }
 
 export interface DateFilter {
-  type: 'all' | 'today' | 'week' | 'month' | 'quarter' | 'year' | 'custom';
+  type: 'all' | 'custom';
 }
 
 export interface AppState {

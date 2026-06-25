@@ -18,7 +18,11 @@ export function relDate(ts: number): string {
   if (m < 60) return m + 'm ago';
   if (h < 24) return h + 'h ago';
   if (d < 7) return d + 'd ago';
-  return new Date(ts).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+  return new Date(ts).toLocaleDateString('en-GB', {
+    day: 'numeric',
+    month: 'short',
+    timeZone: 'Asia/Kolkata',
+  });
 }
 
 export function fullDate(ts: number): string {
@@ -27,6 +31,7 @@ export function fullDate(ts: number): string {
     day: 'numeric',
     month: 'long',
     year: 'numeric',
+    timeZone: 'Asia/Kolkata',
   });
 }
 

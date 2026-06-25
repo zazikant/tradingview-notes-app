@@ -386,7 +386,11 @@ export function exportNotesToCSV(notes: Note[], tags: Tag[]): void {
     }
   }
   const csv = [headers.join(','), ...rows].join('\r\n');
-  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  // Prepend a UTF-8 BOM (\uFEFF). Excel on Windows relies on the BOM to (1)
+  // detect the file as UTF-8 so special characters render correctly, and
+  // (2) trigger its CSV import handler rather than the generic text import
+  // that can mis-detect delimiters and quote handling on multi-line fields.
+  const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
   link.href = url;

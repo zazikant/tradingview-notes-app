@@ -222,7 +222,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }
 
     if (sortMode === 'newest') {
-      filtered.sort((a, b) => b.created - a.created);
+      // Most-recently-edited first: fall back to `created` for legacy rows
+      // that haven't been written since the `updated` column was added.
+      filtered.sort((a, b) => (b.updated ?? b.created) - (a.updated ?? a.created));
     } else if (sortMode === 'oldest') {
       filtered.sort((a, b) => a.created - b.created);
     } else {

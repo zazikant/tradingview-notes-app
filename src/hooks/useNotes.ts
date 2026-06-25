@@ -86,9 +86,15 @@ export function useNotes() {
       autoSaveTimer.current = null;
     }
 
-    await sbUpdateNote(note);
+    // Stamp `updated` on local state BEFORE persisting so the list re-sorts
+    // immediately (newest = most-recently-edited first).
+    const now = Date.now();
+    const stamped = { ...note, updated: now };
+    dispatch({ type: 'UPDATE_NOTE', payload: stamped });
+
+    await sbUpdateNote(stamped);
     isDirty.current = false;
-    lastSavedNote.current = JSON.stringify(note);
+    lastSavedNote.current = JSON.stringify(stamped);
   }, [state.activeId, state.notes]);
 
   // Schedule a debounced auto-save — only persists if dirty
@@ -100,9 +106,13 @@ export function useNotes() {
       if (state.activeId && isDirty.current) {
         const note = state.notes.find(n => n.id === state.activeId);
         if (note) {
-          await sbUpdateNote(note);
+          // Stamp `updated` locally before persisting so the list re-sorts.
+          const now = Date.now();
+          const stamped = { ...note, updated: now };
+          dispatch({ type: 'UPDATE_NOTE', payload: stamped });
+          await sbUpdateNote(stamped);
           isDirty.current = false;
-          lastSavedNote.current = JSON.stringify(note);
+          lastSavedNote.current = JSON.stringify(stamped);
         }
       }
     }, 2000); // 2 second debounce — longer than before to let user type freely
@@ -161,9 +171,11 @@ export function useNotes() {
         ? note.tags.filter(t => t !== tagId)
         : [...note.tags, tagId];
 
-      const updated = { ...note, tags: newTags };
+      // Tag toggles persist immediately (considered a deliberate action).
+      // Stamp `updated` so the note floats to the top of the newest-sorted list.
+      const now = Date.now();
+      const updated = { ...note, tags: newTags, updated: now };
 
-      // Tag toggles persist immediately (considered a deliberate action)
       dispatch({ type: 'UPDATE_NOTE', payload: updated });
       await sbUpdateNote(updated);
       isDirty.current = false;

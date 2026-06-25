@@ -13,7 +13,7 @@ const TAGS_LIMIT = 500;
 export async function loadNotes(): Promise<Note[]> {
   const { data, error } = await supabase
     .from('notes')
-    .select('client_id, ticker, body, tags, created')
+    .select('client_id, ticker, body, tags, created, updated')
     .order('created', { ascending: false })
     .limit(NOTES_LIMIT);
 
@@ -28,6 +28,7 @@ export async function loadNotes(): Promise<Note[]> {
     body: n.body,
     tags: n.tags || [],
     created: n.created,
+    updated: n.updated ?? n.created,
   }));
 }
 
@@ -51,24 +52,33 @@ export async function loadTags(): Promise<Tag[]> {
 }
 
 export async function addNote(note: Note): Promise<void> {
+  const now = note.updated ?? Date.now();
   const { error } = await supabase.from('notes').insert({
     client_id: note.id,
     ticker: note.ticker,
     body: note.body,
     tags: note.tags,
     created: note.created,
+    updated: now,
   });
 
   if (error) console.error('Error adding note:', error);
 }
 
 export async function updateNote(note: Note): Promise<void> {
+  const now = Date.now();
   const { error } = await supabase
     .from('notes')
-    .update({ ticker: note.ticker, body: note.body, tags: note.tags })
+    .update({ ticker: note.ticker, body: note.body, tags: note.tags, updated: now })
     .eq('client_id', note.id);
 
-  if (error) console.error('Error updating note:', error);
+  if (error) {
+    console.error('Error updating note:', error);
+  } else {
+    // Reflect the freshly-stamped server value back onto the in-memory note
+    // so optimistic state and server state stay in sync.
+    note.updated = now;
+  }
 }
 
 export async function deleteNote(id: string): Promise<void> {

@@ -10,6 +10,8 @@ export interface Note {
   body: string;
   tags: string[];
   created: number;
+  // Timestamp of the most recent edit. Falls back to `created` for legacy rows.
+  updated?: number;
 }
 
 export interface DateFilter {

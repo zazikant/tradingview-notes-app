@@ -187,8 +187,15 @@ export function parseCSVRows(csv: string): string[][] {
           i++;
           continue;
         }
+      } else if (char === '\r' && i + 1 < csv.length && csv[i + 1] === '\n') {
+        // Normalize CRLF → LF inside quoted fields so that re-imported notes
+        // have the same \n line endings as natively-created notes. The export
+        // normalizes to \r\n for Excel compatibility; this reverses it on import.
+        currentField += '\n';
+        i += 2;
+        continue;
       } else {
-        // Any character inside quotes (including newlines) is part of the field
+        // Any character inside quotes (including lone newlines) is part of the field
         currentField += char;
         i++;
         continue;
@@ -265,14 +272,23 @@ export function parseCSVLine(line: string): string[] {
 export function exportNotesToCSV(notes: Note[], tags: Tag[]): void {
   const tagMap = new Map(tags.map(t => [t.id, t.name]));
   const headers = ['Ticker', 'Date', 'Tags', 'Body'];
+
+  // RFC 4180 field: normalize line endings to \r\n, escape double quotes by
+  // doubling them, and wrap in double quotes. Normalizing to \r\n is critical
+  // for Excel compatibility — a lone \n inside a quoted field causes Excel's
+  // default CSV parser to treat it as a row break, splitting the field across
+  // multiple rows and columns.
+  const csvField = (value: string): string => {
+    const normalized = value.replace(/\r\n/g, '\n').replace(/\n/g, '\r\n');
+    const escaped = normalized.replace(/"/g, '""');
+    return `"${escaped}"`;
+  };
+
   const rows = notes.map(note => {
     // Skip tag IDs that no longer exist — don't leak raw IDs into CSV
     const tagNames = note.tags.map(id => tagMap.get(id)).filter(Boolean).join('; ');
     const date = fullDate(note.created);
-    const ticker = note.ticker.replace(/"/g, '""');
-    const body = note.body.replace(/"/g, '""');
-    const tagsEscaped = tagNames.replace(/"/g, '""');
-    return [`"${ticker}"`, `"${date}"`, `"${tagsEscaped}"`, `"${body}"`].join(',');
+    return [csvField(note.ticker), csvField(date), csvField(tagNames), csvField(note.body)].join(',');
   });
   const csv = [headers.join(','), ...rows].join('\r\n');
   const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });

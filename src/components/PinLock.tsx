@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 
-const CORRECT_PIN = '22222222';
+const CORRECT_PIN = '19081992';
 const ADMIN_EMAIL = 'zazikant@gmail.com';
 const SESSION_KEY = 'tv-notes-auth';
 

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, useRef, useEffect } from 'react';
+import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { LivePipelineLog, type LiveEvent } from './LivePipelineLog';
 
 /**
@@ -50,6 +50,13 @@ export function BrainPanel({ onClose }: BrainPanelProps) {
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Docs rail: search + multi-select
+  const [docSearch, setDocSearch] = useState('');
+  const [docSelectMode, setDocSelectMode] = useState(false);
+  const [selectedDocs, setSelectedDocs] = useState<Set<string>>(new Set());
+  const [bulkDocAction, setBulkDocAction] = useState<'idle' | 'deleting'>('idle');
+  const [bulkDocProgress, setBulkDocProgress] = useState<{ current: number; total: number } | null>(null);
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -338,6 +345,69 @@ export function BrainPanel({ onClose }: BrainPanelProps) {
     }
   }, []);
 
+  // ─── Docs rail: multi-select + bulk delete ──────────────────────────
+  const filteredDocs = useMemo(() => {
+    const q = docSearch.trim().toLowerCase();
+    if (!q) return docs;
+    return docs.filter((d) => d.filename.toLowerCase().includes(q));
+  }, [docs, docSearch]);
+
+  const toggleDocSelect = useCallback((filename: string) => {
+    setSelectedDocs((prev) => {
+      const n = new Set(prev);
+      if (n.has(filename)) n.delete(filename); else n.add(filename);
+      return n;
+    });
+  }, []);
+
+  const exitDocSelectMode = useCallback(() => {
+    setDocSelectMode(false);
+    setSelectedDocs(new Set());
+    setBulkDocAction('idle');
+    setBulkDocProgress(null);
+  }, []);
+
+  const handleBulkDeleteDocs = useCallback(async () => {
+    if (selectedDocs.size === 0 || bulkDocAction !== 'idle') return;
+    if (!confirm(`Remove ${selectedDocs.size} document${selectedDocs.size !== 1 ? 's' : ''} from the Brain?\nThis will delete the Pinecone vectors, the Storage bucket file (if PDF), and the documents table row for each.`)) return;
+    setBulkDocAction('deleting');
+    setBulkDocProgress({ current: 0, total: selectedDocs.size });
+
+    const filenames = Array.from(selectedDocs);
+    let successCount = 0;
+    for (let i = 0; i < filenames.length; i++) {
+      const f = filenames[i];
+      setBulkDocProgress({ current: i + 1, total: filenames.length });
+      try {
+        const formData = new FormData();
+        formData.append('name', f);
+        formData.append('mode', 'Delete');
+        const r = await fetch('/api/brain/upload', { method: 'POST', body: formData });
+        if (r.ok) successCount++;
+      } catch (err) {
+        console.error('[BrainPanel] bulk delete failed for', f, err);
+      }
+    }
+    // Refresh from server so we show the accurate remaining list.
+    await loadDocs();
+    setBulkDocAction('idle');
+    setBulkDocProgress(null);
+    setDocSelectMode(false);
+    setSelectedDocs(new Set());
+    if (successCount > 0) {
+      // Optional: surface a brief success indicator in the chat
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: `sys_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+          role: 'assistant',
+          content: `Removed ${successCount} of ${filenames.length} document${filenames.length !== 1 ? 's' : ''} from the Brain.`,
+          ts: Date.now(),
+        },
+      ]);
+    }
+  }, [selectedDocs, bulkDocAction, loadDocs]);
+
   const syncedCount = docs.length;
 
   return (
@@ -492,29 +562,107 @@ export function BrainPanel({ onClose }: BrainPanelProps) {
             <aside className="brain-docs-rail">
               <header className="brain-docs-rail-header">
                 <span>In Brain ({syncedCount})</span>
-                <button
-                  type="button"
-                  className="brain-docs-refresh"
-                  onClick={loadDocs}
-                  disabled={docsLoading}
-                  title="Refresh"
-                >
-                  {docsLoading ? '⟳' : '↻'}
-                </button>
+                <div className="brain-docs-rail-actions">
+                  <button
+                    type="button"
+                    className={`brain-docs-rail-btn ${docSelectMode ? 'active' : ''}`}
+                    onClick={() => (docSelectMode ? exitDocSelectMode() : setDocSelectMode(true))}
+                    disabled={bulkDocAction !== 'idle' || docs.length === 0}
+                    title={docSelectMode ? 'Exit select mode' : 'Select multiple to delete'}
+                  >
+                    {docSelectMode ? '✕' : '☑'}
+                  </button>
+                  <button
+                    type="button"
+                    className="brain-docs-refresh"
+                    onClick={loadDocs}
+                    disabled={docsLoading || bulkDocAction !== 'idle'}
+                    title="Refresh"
+                  >
+                    {docsLoading ? '⟳' : '↻'}
+                  </button>
+                </div>
               </header>
+
+              {/* Search input */}
+              <div className="brain-docs-search-wrap">
+                <input
+                  type="text"
+                  className="brain-docs-search"
+                  placeholder="Search by filename…"
+                  value={docSearch}
+                  onChange={(e) => setDocSearch(e.target.value)}
+                  disabled={bulkDocAction !== 'idle'}
+                />
+                {docSearch && (
+                  <button
+                    type="button"
+                    className="brain-docs-search-clear"
+                    onClick={() => setDocSearch('')}
+                    title="Clear search"
+                  >✕</button>
+                )}
+              </div>
+
+              {/* Bulk action bar — visible when in select mode */}
+              {docSelectMode && (
+                <div className="brain-docs-bulk-bar">
+                  <span className="brain-docs-bulk-count">
+                    {selectedDocs.size} selected
+                    {bulkDocProgress && (
+                      <span className="brain-docs-bulk-progress">
+                        {' '}— deleting {bulkDocProgress.current}/{bulkDocProgress.total}…
+                      </span>
+                    )}
+                  </span>
+                  <div className="brain-docs-bulk-actions">
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-sm"
+                      onClick={exitDocSelectMode}
+                      disabled={bulkDocAction !== 'idle'}
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-danger btn-sm"
+                      onClick={handleBulkDeleteDocs}
+                      disabled={selectedDocs.size === 0 || bulkDocAction !== 'idle'}
+                    >
+                      Delete ({selectedDocs.size})
+                    </button>
+                  </div>
+                </div>
+              )}
+
               <div className="brain-docs-list">
                 {docs.length === 0 ? (
                   <div className="brain-docs-empty">
                     Nothing in the Brain yet. Click <strong>Sync to Brain</strong> on a note, or upload a PDF via the 📎 button below.
                   </div>
+                ) : filteredDocs.length === 0 ? (
+                  <div className="brain-docs-empty">
+                    No files match <strong>“{docSearch}”</strong>. Try a different search.
+                  </div>
                 ) : (
-                  docs.map((d) => {
+                  filteredDocs.map((d) => {
                     const m = d.filename.match(/^note-(.+)\.txt$/);
                     const isNote = !!m;
                     const label = isNote ? m![1] : d.filename;
                     const icon = isNote ? '📝' : (d.filename.toLowerCase().endsWith('.pdf') ? '📄' : '📃');
+                    const isSelected = selectedDocs.has(d.filename);
                     return (
-                      <div key={d.filename} className="brain-doc-row">
+                      <div
+                        key={d.filename}
+                        className={`brain-doc-row ${docSelectMode ? 'select-mode' : ''} ${isSelected ? 'selected' : ''}`}
+                        onClick={() => docSelectMode && toggleDocSelect(d.filename)}
+                      >
+                        {docSelectMode && (
+                          <div className={`brain-doc-checkbox ${isSelected ? 'checked' : ''}`}>
+                            {isSelected ? '✓' : ''}
+                          </div>
+                        )}
                         <span className="brain-doc-icon">{icon}</span>
                         <div className="brain-doc-info">
                           <div className="brain-doc-name" title={d.filename}>{label}</div>
@@ -522,14 +670,16 @@ export function BrainPanel({ onClose }: BrainPanelProps) {
                             {new Date(d.updated_at).toLocaleString()}
                           </div>
                         </div>
-                        <button
-                          type="button"
-                          className="brain-doc-remove"
-                          onClick={() => handleRemoveDoc(d.filename)}
-                          title="Remove from Brain"
-                        >
-                          ✕
-                        </button>
+                        {!docSelectMode && (
+                          <button
+                            type="button"
+                            className="brain-doc-remove"
+                            onClick={(e) => { e.stopPropagation(); handleRemoveDoc(d.filename); }}
+                            title="Remove from Brain"
+                          >
+                            ✕
+                          </button>
+                        )}
                       </div>
                     );
                   })

@@ -1723,3 +1723,284 @@ body {
   width: 20px;
   text-align: center;
 }
+
+/* ─── NotesPanel multi-select ─── */
+
+/* "Select" toggle button in the panel header */
+.panel-select-btn {
+  font-family: var(--font-syne), 'Syne', sans-serif;
+  font-size: 14px;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--surface2);
+  color: var(--muted);
+  cursor: pointer;
+  transition: all 0.15s;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  margin-left: 4px;
+}
+.panel-select-btn:hover:not(:disabled) {
+  background: var(--accent-light);
+  border-color: var(--accent);
+  color: var(--accent-text);
+}
+.panel-select-btn.active {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
+}
+.panel-select-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Sticky bulk action bar (shown in select mode) */
+.bulk-action-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 12px;
+  background: var(--accent-light);
+  border-bottom: 1px solid var(--accent);
+  flex-shrink: 0;
+  flex-wrap: wrap;
+}
+.bulk-action-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.bulk-count {
+  font-family: var(--font-syne), 'Syne', sans-serif;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--accent-text);
+}
+.bulk-link-btn {
+  background: none;
+  border: none;
+  color: var(--accent);
+  font-size: 11px;
+  font-family: var(--font-syne), 'Syne', sans-serif;
+  font-weight: 600;
+  cursor: pointer;
+  text-decoration: underline;
+  padding: 0;
+}
+.bulk-link-btn:hover:not(:disabled) {
+  color: var(--accent-text);
+}
+.bulk-link-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.bulk-action-right {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.bulk-progress {
+  font-size: 11px;
+  color: var(--muted);
+  font-family: var(--font-epilogue), 'Epilogue', sans-serif;
+  font-style: italic;
+  margin-right: 4px;
+}
+
+/* NoteCard in select mode */
+.note-card.select-mode {
+  cursor: pointer;
+  position: relative;
+  padding-left: 44px;
+}
+.note-card.select-mode:hover {
+  background: var(--accent-light);
+}
+.note-card.selected {
+  background: var(--accent-light) !important;
+  border-color: var(--accent) !important;
+}
+.note-checkbox {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  width: 20px;
+  height: 20px;
+  border-radius: 4px;
+  border: 1.5px solid var(--border);
+  background: var(--surface);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  color: #fff;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.note-checkbox.checked {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+/* ─── BrainPanel docs rail — search + multi-select ─── */
+
+.brain-docs-rail-actions {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+}
+.brain-docs-rail-btn {
+  font-size: 14px;
+  width: 24px;
+  height: 24px;
+  border-radius: 5px;
+  border: 1px solid var(--border);
+  background: var(--surface2);
+  color: var(--muted);
+  cursor: pointer;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s;
+}
+.brain-docs-rail-btn:hover:not(:disabled) {
+  background: var(--accent-light);
+  border-color: var(--accent);
+  color: var(--accent-text);
+}
+.brain-docs-rail-btn.active {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
+}
+.brain-docs-rail-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Search input */
+.brain-docs-search-wrap {
+  position: relative;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.brain-docs-search {
+  width: 100%;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 26px 6px 10px;
+  font-family: var(--font-epilogue), 'Epilogue', sans-serif;
+  font-size: 12px;
+  color: var(--text);
+  outline: none;
+  transition: border-color 0.15s;
+}
+.brain-docs-search:focus {
+  border-color: var(--accent);
+}
+.brain-docs-search:disabled {
+  opacity: 0.5;
+}
+.brain-docs-search::placeholder {
+  color: var(--muted);
+}
+.brain-docs-search-clear {
+  position: absolute;
+  top: 50%;
+  right: 18px;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 12px;
+  padding: 2px 4px;
+  line-height: 1;
+}
+.brain-docs-search-clear:hover {
+  color: var(--accent);
+}
+
+/* Bulk action bar in the rail */
+.brain-docs-bulk-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 6px 10px;
+  background: var(--accent-light);
+  border-bottom: 1px solid var(--accent);
+  flex-shrink: 0;
+  flex-wrap: wrap;
+}
+.brain-docs-bulk-count {
+  font-family: var(--font-syne), 'Syne', sans-serif;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--accent-text);
+}
+.brain-docs-bulk-progress {
+  font-style: italic;
+  color: var(--muted);
+  font-weight: 400;
+}
+.brain-docs-bulk-actions {
+  display: flex;
+  gap: 4px;
+}
+
+/* Doc rows in select mode */
+.brain-doc-row.select-mode {
+  cursor: pointer;
+  position: relative;
+  padding-left: 36px;
+}
+.brain-doc-row.select-mode:hover {
+  background: var(--accent-light);
+}
+.brain-doc-row.selected {
+  background: var(--accent-light);
+}
+.brain-doc-checkbox {
+  position: absolute;
+  top: 50%;
+  left: 8px;
+  transform: translateY(-50%);
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+  border: 1.5px solid var(--border);
+  background: var(--surface);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  color: #fff;
+  font-weight: 700;
+  transition: all 0.15s;
+}
+.brain-doc-checkbox.checked {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+/* Mobile: tighten the bulk bars so they don't overflow */
+@media (max-width: 768px) {
+  .bulk-action-bar {
+    padding: 6px 8px;
+  }
+  .brain-docs-bulk-bar {
+    padding: 6px 8px;
+  }
+}

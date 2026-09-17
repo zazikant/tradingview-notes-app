@@ -1646,3 +1646,80 @@ body {
   .brain-msg-bubble { max-width: 88%; }
   .brain-sources { max-width: 88%; }
 }
+
+/* ─── Upload UI (added in v2 for PDF support) ─── */
+
+/* Upload button — sits left of the textarea in the input row */
+.brain-upload-btn {
+  font-family: var(--font-syne), 'Syne', sans-serif;
+  font-size: 18px;
+  width: 44px;
+  height: 44px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--muted);
+  cursor: pointer;
+  transition: all 0.15s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  padding: 0;
+}
+.brain-upload-btn:hover:not(:disabled) {
+  background: var(--accent-light);
+  border-color: var(--accent);
+  color: var(--accent-text);
+  transform: translateY(-1px);
+}
+.brain-upload-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Drag-over state — highlight the whole input row */
+.brain-input-wrap.drag-over {
+  background: var(--accent-light);
+  border-top-color: var(--accent);
+  outline: 2px dashed var(--accent);
+  outline-offset: -2px;
+}
+.brain-input-wrap.drag-over .brain-input {
+  background: transparent;
+}
+
+/* Upload status banners */
+.brain-upload-error {
+  width: 100%;
+  background: #faeaea;
+  color: #8b1a1a;
+  border: 1px solid #e8b8b8;
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-size: 11.5px;
+  font-family: var(--font-epilogue), 'Epilogue', sans-serif;
+  margin-bottom: 6px;
+  flex-shrink: 0;
+}
+.brain-upload-progress {
+  width: 100%;
+  background: var(--accent-light);
+  color: var(--accent-text);
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-size: 11.5px;
+  font-family: var(--font-epilogue), 'Epilogue', sans-serif;
+  margin-bottom: 6px;
+  flex-shrink: 0;
+}
+
+/* Doc icon in the synced-docs rail */
+.brain-doc-icon {
+  font-size: 16px;
+  line-height: 1;
+  flex-shrink: 0;
+  width: 20px;
+  text-align: center;
+}

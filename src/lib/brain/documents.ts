@@ -2,18 +2,26 @@ import { getSupabaseAdmin } from './supabase-admin';
 import { hashText } from './hash';
 
 /**
- * Documents table CRUD — thin wrapper around the Supabase admin client.
+ * Documents table + Storage bucket CRUD.
  *
  * Schema (created by `supabase/migrations/20260917_create_documents_table.sql`):
  *   filename     text PRIMARY KEY
  *   sha256       text NOT NULL
- *   storage_path text          (null for synced notes — we store text in Pinecone metadata)
+ *   storage_path text          (NULL for synced notes & plain-text uploads;
+ *                              equals filename for PDFs stored in the bucket)
  *   created_at   timestamptz DEFAULT now()
  *   updated_at   timestamptz DEFAULT now()
  *
- * RLS is ENABLED with a service-role-only policy. All access from the app
- * must go through this module (which uses the service role key).
+ * Storage bucket `documents` (created in the same migration):
+ *   - Private bucket (only service_role can read/write)
+ *   - 50 MB per-file limit
+ *   - Allowed mime types: application/pdf, text/plain, text/markdown
+ *
+ * RLS is ENABLED with service-role-only policies on both the table and the bucket.
+ * All access from the app must go through this module (which uses the service role key).
  */
+
+export const STORAGE_BUCKET = 'documents';
 
 export interface BrainDocument {
   filename: string;
@@ -24,11 +32,57 @@ export interface BrainDocument {
 }
 
 /**
- * Upsert a document row. Returns true if a new row was inserted (vs updated).
+ * Upload a binary blob to the `documents` storage bucket.
+ * Returns the storage_path (== the filename passed in) on success.
  *
- * @param filename  Primary key, e.g. `note-abc123.txt`
- * @param text      The text content — used to compute sha256 for dedup detection
- *                  (Pinecone upsert is handled separately in pinecone.ts)
+ * Used by PDF uploads — the original PDF is preserved in the bucket so users
+ * can re-download / re-parse later without re-uploading.
+ *
+ * For synced notes & plain-text uploads, this is NOT called (storage_path stays NULL).
+ */
+export async function uploadToStorage(
+  filename: string,
+  buffer: Buffer,
+  contentType: string = 'application/pdf',
+): Promise<string> {
+  const supabase = getSupabaseAdmin();
+  const { error } = await supabase.storage
+    .from(STORAGE_BUCKET)
+    .upload(filename, buffer, {
+      contentType,
+      upsert: true,  // overwrite if exists (idempotent re-uploads)
+    });
+
+  if (error) {
+    throw new Error(`Storage upload failed: ${error.message}`);
+  }
+  return filename;
+}
+
+/**
+ * Delete a file from the `documents` storage bucket.
+ * No-op if the file doesn't exist.
+ */
+export async function deleteFromStorage(filename: string): Promise<void> {
+  const supabase = getSupabaseAdmin();
+  const { error } = await supabase.storage
+    .from(STORAGE_BUCKET)
+    .remove([filename]);
+  // Supabase returns no error if the file didn't exist — only real errors throw.
+  if (error) {
+    console.warn(`Storage delete failed for ${filename}: ${error.message}`);
+  }
+}
+
+/**
+ * Upsert a document row.
+ *
+ * @param filename     Primary key (e.g. `note-abc123.txt` or `report.pdf`)
+ * @param text         Parsed text content — used to compute sha256 for dedup
+ * @param storagePath  NULL for synced notes & plain-text uploads;
+ *                     equals filename for PDFs stored in the bucket.
+ *
+ * Returns true if a new row was inserted (vs updated).
  */
 export async function upsertDocument(
   filename: string,
@@ -77,11 +131,23 @@ export async function upsertDocument(
 }
 
 /**
- * Delete a document row by filename. Caller is responsible for also deleting
- * the Pinecone vectors (pinecone.ts `deleteRecords`).
+ * Delete a document row + its bucket file (if any) by filename.
+ * Caller is responsible for also deleting Pinecone vectors (pinecone.ts `deleteRecords`).
  */
 export async function deleteDocument(filename: string): Promise<void> {
   const supabase = getSupabaseAdmin();
+
+  // Look up the row first to see if there's a storage_path to remove.
+  const { data: existing } = await supabase
+    .from('documents')
+    .select('storage_path')
+    .eq('filename', filename)
+    .maybeSingle();
+
+  if (existing?.storage_path) {
+    await deleteFromStorage(existing.storage_path);
+  }
+
   const { error } = await supabase
     .from('documents')
     .delete()
@@ -92,8 +158,9 @@ export async function deleteDocument(filename: string): Promise<void> {
 }
 
 /**
- * List all documents in the Brain. Optionally filter by a filename prefix
- * (e.g. `note-` to list only synced notes).
+ * List all documents in the Brain. Optionally filter by a filename prefix.
+ *
+ * @param prefix  Pass `'note-'` to list only synced notes. Pass `null` to list everything.
  */
 export async function listDocuments(
   prefix: string | null = null,
@@ -118,7 +185,6 @@ export async function listDocuments(
 
 /**
  * Get a single document row, or null if not found.
- * Used to check whether a given note has been synced.
  */
 export async function getDocument(
   filename: string,

@@ -46,6 +46,10 @@ export function BrainPanel({ onClose }: BrainPanelProps) {
   const [docs, setDocs] = useState<BrainDocument[]>([]);
   const [showDocs, setShowDocs] = useState(false);
   const [docsLoading, setDocsLoading] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const [dragOver, setDragOver] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -245,11 +249,86 @@ export function BrainPanel({ onClose }: BrainPanelProps) {
     }
   };
 
+  // ─── File upload handler ───────────────────────────────────────────
+  const handleUploadFile = useCallback(async (file: File) => {
+    const ext = file.name.toLowerCase().split('.').pop() || '';
+    if (!['pdf', 'txt', 'md', 'json'].includes(ext)) {
+      setUploadError(`Unsupported file type: .${ext}. Allowed: PDF, TXT, MD, JSON`);
+      return;
+    }
+    if (file.size > 50 * 1024 * 1024) {
+      setUploadError(`File too large: ${(file.size / 1024 / 1024).toFixed(1)} MB. Max: 50 MB.`);
+      return;
+    }
+
+    setUploading(true);
+    setUploadError(null);
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('name', file.name);
+      formData.append('mode', 'Add');
+
+      const r = await fetch('/api/brain/upload', {
+        method: 'POST',
+        body: formData,
+      });
+      const json = await r.json();
+      if (!r.ok) {
+        setUploadError(json?.error || `Upload failed (${r.status})`);
+        return;
+      }
+      // Refresh the docs list so the new file appears in the rail + sidebar count updates.
+      await loadDocs();
+      // Surface a system message in the chat so the user sees confirmation.
+      const msg: ChatMessage = {
+        id: `sys_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+        role: 'assistant',
+        content: `Uploaded ${file.name} — ${json.chunks} chunks indexed${json.pages ? `, ${json.pages} pages` : ''}. You can now ask questions about it.`,
+        ts: Date.now(),
+      };
+      setMessages((prev) => [...prev, msg]);
+    } catch (err: any) {
+      setUploadError(err?.message || 'Upload failed');
+    } finally {
+      setUploading(false);
+    }
+  }, [loadDocs]);
+
+  const handleFileInputChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0];
+    if (f) handleUploadFile(f);
+    // Reset so picking the same file again still fires onChange.
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  }, [handleUploadFile]);
+
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    setDragOver(false);
+    const f = e.dataTransfer.files?.[0];
+    if (f) handleUploadFile(f);
+  }, [handleUploadFile]);
+
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    setDragOver(true);
+  }, []);
+
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    setDragOver(false);
+  }, []);
+
   const handleRemoveDoc = useCallback(async (filename: string) => {
     if (!confirm(`Remove ${filename} from the Brain?`)) return;
     try {
-      const r = await fetch(`/api/brain/documents?filename=${encodeURIComponent(filename)}`, {
-        method: 'DELETE',
+      // Hit the upload route's DELETE endpoint — it cascades storage + pinecone + db.
+      const formData = new FormData();
+      formData.append('name', filename);
+      formData.append('mode', 'Delete');
+      const r = await fetch('/api/brain/upload', {
+        method: 'POST',
+        body: formData,
       });
       if (r.ok) {
         setDocs((prev) => prev.filter((d) => d.filename !== filename));
@@ -272,8 +351,8 @@ export function BrainPanel({ onClose }: BrainPanelProps) {
               <h2 className="brain-title">Chat Brain</h2>
               <p className="brain-subtitle">
                 {syncedCount > 0
-                  ? `${syncedCount} note${syncedCount !== 1 ? 's' : ''} synced`
-                  : 'No notes synced yet — click "Sync to Brain" on a note'}
+                  ? `${syncedCount} item${syncedCount !== 1 ? 's' : ''} in Brain`
+                  : 'Brain is empty — sync a note or upload a PDF'}
               </p>
             </div>
           </div>
@@ -307,12 +386,12 @@ export function BrainPanel({ onClose }: BrainPanelProps) {
                   <div className="brain-empty-icon">🧠</div>
                   <h3>Ask your Brain anything</h3>
                   <p>
-                    Sync notes from the list using the <strong>Sync to Brain</strong> button,
-                    then ask questions here. Answers cite the notes they came from.
+                    Sync notes via the <strong>Sync to Brain</strong> button, or upload a PDF / TXT / MD via the <strong>📎</strong> button below.
+                    Then ask questions here. Answers cite the documents they came from.
                   </p>
                   {syncedCount === 0 && (
                     <p className="brain-empty-hint">
-                      No notes synced yet — close this panel, hover any note, and click the 🧠 button.
+                      Nothing in Brain yet. Either close this panel and click <strong>🧠 Sync</strong> on a note card, or click the <strong>📎</strong> button below to upload a PDF.
                     </p>
                   )}
                 </div>
@@ -353,11 +432,44 @@ export function BrainPanel({ onClose }: BrainPanelProps) {
             />
 
             {/* Input */}
-            <div className="brain-input-wrap">
+            <div
+              className={`brain-input-wrap ${dragOver ? 'drag-over' : ''}`}
+              onDrop={handleDrop}
+              onDragOver={handleDragOver}
+              onDragLeave={handleDragLeave}
+            >
+              {uploadError && (
+                <div className="brain-upload-error">⚠️ {uploadError}</div>
+              )}
+              {uploading && (
+                <div className="brain-upload-progress">
+                  Uploading + indexing… (large PDFs may take 30-60s)
+                </div>
+              )}
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".pdf,.txt,.md,.json,application/pdf,text/plain,text/markdown,application/json"
+                style={{ display: 'none' }}
+                onChange={handleFileInputChange}
+              />
+              <button
+                type="button"
+                className="brain-upload-btn"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={uploading || loading}
+                title="Upload PDF / TXT / MD to the Brain"
+              >
+                {uploading ? '⏳' : '📎'}
+              </button>
               <textarea
                 ref={inputRef}
                 className="brain-input"
-                placeholder={loading ? 'Generating…' : 'Ask your Brain… (Enter to send, Shift+Enter for newline)'}
+                placeholder={
+                  loading ? 'Generating…' :
+                  dragOver ? 'Drop your file here to upload to the Brain' :
+                  'Ask your Brain… (Enter to send, Shift+Enter for newline, 📎 to upload PDF/TXT/MD)'
+                }
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={handleKeyDown}
@@ -379,7 +491,7 @@ export function BrainPanel({ onClose }: BrainPanelProps) {
           {showDocs && (
             <aside className="brain-docs-rail">
               <header className="brain-docs-rail-header">
-                <span>Synced notes ({syncedCount})</span>
+                <span>In Brain ({syncedCount})</span>
                 <button
                   type="button"
                   className="brain-docs-refresh"
@@ -393,16 +505,19 @@ export function BrainPanel({ onClose }: BrainPanelProps) {
               <div className="brain-docs-list">
                 {docs.length === 0 ? (
                   <div className="brain-docs-empty">
-                    No notes synced yet. Click <strong>Sync to Brain</strong> on any note card.
+                    Nothing in the Brain yet. Click <strong>Sync to Brain</strong> on a note, or upload a PDF via the 📎 button below.
                   </div>
                 ) : (
                   docs.map((d) => {
                     const m = d.filename.match(/^note-(.+)\.txt$/);
-                    const noteId = m ? m[1] : d.filename;
+                    const isNote = !!m;
+                    const label = isNote ? m![1] : d.filename;
+                    const icon = isNote ? '📝' : (d.filename.toLowerCase().endsWith('.pdf') ? '📄' : '📃');
                     return (
                       <div key={d.filename} className="brain-doc-row">
+                        <span className="brain-doc-icon">{icon}</span>
                         <div className="brain-doc-info">
-                          <div className="brain-doc-name">{noteId}</div>
+                          <div className="brain-doc-name" title={d.filename}>{label}</div>
                           <div className="brain-doc-meta">
                             {new Date(d.updated_at).toLocaleString()}
                           </div>

@@ -8,15 +8,16 @@ export const maxDuration = 60;
 /**
  * GET /api/brain/documents
  *
- * Returns the list of synced documents. By default only notes
- * (filename LIKE 'note-%'). Pass ?all=1 to include all docs.
+ * Returns the list of all Brain documents — synced notes AND uploaded files.
+ *
+ * Pass ?notes=1 to filter to only synced notes (filename LIKE 'note-%').
  *
  * Each row: { filename, sha256, storage_path, created_at, updated_at }
  */
 export async function GET(req: NextRequest) {
-  const all = req.nextUrl.searchParams.get('all') === '1';
+  const notesOnly = req.nextUrl.searchParams.get('notes') === '1';
   try {
-    const docs = await listDocuments(all ? null : 'note-');
+    const docs = await listDocuments(notesOnly ? 'note-' : null);
     return NextResponse.json({ documents: docs });
   } catch (err: any) {
     console.error('[/api/brain/documents GET] error', err);

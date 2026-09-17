@@ -21,7 +21,10 @@
 
 const OPENCODE_GATEWAY = 'https://opencode.ai/zen/go/v1/chat/completions';
 const OPENCODE_DEFAULT_MODEL = 'glm-5.1';
-const OPENCODE_DEFAULT_TIMEOUT_MS = 120_000;
+// 55s per-call timeout — under Vercel Hobby's 60s Node runtime cap.
+// The previous 120s was never reachable on Hobby (Vercel kills at 60s).
+// GLM-5.1 typically responds in 3-15s, so 55s is plenty.
+const OPENCODE_DEFAULT_TIMEOUT_MS = 55_000;
 
 function newSessionId(): string {
   // crypto.randomUUID() is available in both Edge and Node runtimes.

@@ -8,7 +8,7 @@ import {
 import { opencodeChatStreamControlled } from '@/lib/brain/opencode';
 
 export const runtime = 'nodejs';
-export const maxDuration = 180;
+export const maxDuration = 60;  // Vercel Hobby Node cap (was 180 — Vercel ignored it and killed at 60s)
 
 // ─── Prompts (ported verbatim from rag-document-assistant-opencode) ─────────
 // These are the exact prompts that produced good OpenCode output in the
@@ -57,6 +57,12 @@ Format your response as:
 Be thorough — this synthesis will be used as context for the final answer, so include all relevant details from the chunks.`;
 
 const NO_CONTEXT_PROMPT = `You are a helpful assistant. No notes have been synced to the Brain yet, OR none of the synced notes matched the question. Answer the user's question from general knowledge, and gently suggest they sync some notes first for better-grounded answers.`;
+
+// Pipeline-level retry — if the first attempt times out or aborts mid-stream,
+// retry up to 3 times with backoff. Each attempt gets a fresh 55s budget
+// (under Vercel Hobby's 60s Node cap). The 'reset' SSE event tells the
+// client to clear its partial answer buffer before each retry.
+const MAX_ANSWER_ATTEMPTS = 3;
 
 /**
  * POST /api/brain/chat — streaming RAG chat (Server-Sent Events)
@@ -218,25 +224,54 @@ export async function POST(req: NextRequest) {
           { role: 'user', content: userContent },
         ];
 
-        try {
-          const result = await opencodeChatStreamControlled({
-            messages,
-            temperature: 0.3,   // matches source (was 0.4)
-            maxTokens: 32768,    // supports up to ~30K char outputs (was 1500 — way too small)
-            onLog: (line) => send('log', { line }),
-            onChunk: (text) => send('chunk', { text }),
-          });
+        // Pipeline-level retry: up to 3 attempts. Each attempt gets a fresh
+        // 55s budget. Between attempts, emit 'reset' so the client clears
+        // its partial answer buffer (prevents garbled concatenation).
+        let answerOk = false;
+        let lastErr = '';
 
-          send('stage-end', {
-            stage: 'answer',
-            ok: true,
-            elapsedMs: result.elapsedMs,
-            summary: `${result.content.length} chars in ${result.attempts} attempt(s)`,
-          });
-        } catch (err: any) {
-          send('log', { line: `[opencode] final failure: ${err?.message || 'unknown'}` });
-          send('stage-end', { stage: 'answer', ok: false, elapsedMs: Date.now() - pipelineStart, summary: 'answer failed' });
-          send('error', { message: `OpenCode call failed: ${err?.message || 'unknown'}` });
+        for (let attempt = 1; attempt <= MAX_ANSWER_ATTEMPTS; attempt++) {
+          send('log', { line: `[pipeline] answer attempt ${attempt}/${MAX_ANSWER_ATTEMPTS}` });
+
+          // Before each retry, tell the client to clear its partial buffer.
+          if (attempt > 1) {
+            send('reset', { stage: 'answer' });
+          }
+
+          try {
+            const result = await opencodeChatStreamControlled({
+              messages,
+              temperature: 0.3,   // matches source (was 0.4)
+              maxTokens: 32768,    // supports up to ~30K char outputs
+              onLog: (line) => send('log', { line }),
+              onChunk: (text) => send('chunk', { text }),
+            });
+
+            send('stage-end', {
+              stage: 'answer',
+              ok: true,
+              elapsedMs: result.elapsedMs,
+              summary: `${result.content.length} chars in ${result.attempts} attempt(s)`,
+            });
+            answerOk = true;
+            break;
+          } catch (err: any) {
+            lastErr = err?.message || 'unknown';
+            send('log', { line: `[opencode] attempt ${attempt} failed: ${lastErr.slice(0, 150)}` });
+
+            if (attempt < MAX_ANSWER_ATTEMPTS) {
+              // Exponential backoff: 1s, 2s
+              const backoff = 1000 * attempt;
+              send('log', { line: `[pipeline] backing off ${backoff}ms before retry` });
+              await new Promise((r) => setTimeout(r, backoff));
+            }
+          }
+        }
+
+        if (!answerOk) {
+          send('log', { line: `[opencode] final failure after ${MAX_ANSWER_ATTEMPTS} attempts: ${lastErr}` });
+          send('stage-end', { stage: 'answer', ok: false, elapsedMs: Date.now() - pipelineStart, summary: `failed after ${MAX_ANSWER_ATTEMPTS} attempts` });
+          send('error', { message: `OpenCode call failed after ${MAX_ANSWER_ATTEMPTS} attempts: ${lastErr}` });
           send('pipeline-end', { ok: false });
           controller.close();
           return;

@@ -81,6 +81,33 @@ export function NotesPanel() {
     }
   }, [syncingNoteIds]);
 
+  // ─── Remove a single note from the Brain (NO confirm dialog — user said no prompts) ───
+  // Called when user clicks ✓ Brain on an already-synced note card.
+  const removeFromBrain = useCallback(async (note: Note, e: React.MouseEvent) => {
+    e.stopPropagation();
+    const filename = `note-${note.id}.txt`;
+    // Optimistically remove the badge so the UI feels instant.
+    setSyncedNoteIds((prev) => {
+      const n = new Set(prev);
+      n.delete(note.id);
+      return n;
+    });
+    try {
+      const r = await fetch(`/api/brain/documents?filename=${encodeURIComponent(filename)}`, {
+        method: 'DELETE',
+      });
+      if (!r.ok) {
+        // Rollback on failure.
+        setSyncedNoteIds((prev) => new Set(prev).add(note.id));
+        const err = await r.json().catch(() => ({}));
+        alert(`Failed to remove from Brain: ${err.error || r.statusText}`);
+      }
+    } catch (err: any) {
+      setSyncedNoteIds((prev) => new Set(prev).add(note.id));
+      alert(`Failed to remove from Brain: ${err?.message || 'network error'}`);
+    }
+  }, []);
+
   // ─── Bulk actions ────────────────────────────────────────────────
   const toggleSelect = useCallback((id: string) => {
     setSelectedIds((prev) => {
@@ -348,6 +375,7 @@ export function NotesPanel() {
                 synced={syncedNoteIds.has(note.id)}
                 syncing={syncingNoteIds.has(note.id)}
                 onSyncToBrain={handleSyncToBrain}
+                onRemoveFromBrain={removeFromBrain}
                 selectMode={selectMode}
                 selected={selectedIds.has(note.id)}
                 onToggleSelect={() => toggleSelect(note.id)}
@@ -416,13 +444,14 @@ interface NoteCardProps {
   synced: boolean;
   syncing: boolean;
   onSyncToBrain: (note: Note, e: React.MouseEvent) => void;
+  onRemoveFromBrain: (note: Note, e: React.MouseEvent) => void;
   selectMode: boolean;
   selected: boolean;
   onToggleSelect: () => void;
   disabled: boolean;
 }
 
-function NoteCard({ note, isActive, onClick, synced, syncing, onSyncToBrain, selectMode, selected, onToggleSelect, disabled }: NoteCardProps) {
+function NoteCard({ note, isActive, onClick, synced, syncing, onSyncToBrain, onRemoveFromBrain, selectMode, selected, onToggleSelect, disabled }: NoteCardProps) {
   const { getTag, getTagColor } = useNotes();
 
   const handleCardClick = (e: React.MouseEvent) => {
@@ -433,6 +462,22 @@ function NoteCard({ note, isActive, onClick, synced, syncing, onSyncToBrain, sel
       return;
     }
     onClick();
+  };
+
+  // ↻ Re-sync button (only shown when already synced) — sits LEFT of the Brain button.
+  const handleResync = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    onSyncToBrain(note, e);  // idempotent — re-embeds if content changed
+  };
+
+  // ✓ Brain button — when synced, click removes from Brain (NO confirm dialog).
+  // When not synced, click syncs.
+  const handleBrainClick = (e: React.MouseEvent) => {
+    if (synced) {
+      onRemoveFromBrain(note, e);
+    } else {
+      onSyncToBrain(note, e);
+    }
   };
 
   return (
@@ -455,7 +500,7 @@ function NoteCard({ note, isActive, onClick, synced, syncing, onSyncToBrain, sel
       <div className="note-card-top">
         <span className="note-ticker" style={{ whiteSpace: 'pre-wrap' }}>{note.ticker || '—'}</span>
         <div className="note-card-top-right">
-          {synced && <span className="note-brain-badge" title="Synced to Brain">🧠</span>}
+          {synced && <span className="note-brain-badge" title="In Brain">🧠</span>}
           <span className="note-date-small">{relDate(note.created)}</span>
         </div>
       </div>
@@ -473,16 +518,30 @@ function NoteCard({ note, isActive, onClick, synced, syncing, onSyncToBrain, sel
             </span>
           );
         })}
-        {/* Hide per-card sync button in select mode */}
+        {/* Hide per-card buttons in select mode */}
         {!selectMode && (
-          <button
-            className={`note-sync-btn ${synced ? 'synced' : ''} ${syncing ? 'syncing' : ''}`}
-            onClick={(e) => onSyncToBrain(note, e)}
-            disabled={syncing}
-            title={synced ? 'Re-sync to Brain (updates if note changed)' : 'Sync to Brain'}
-          >
-            {syncing ? '⏳' : synced ? '✓ Brain' : '🧠 Sync'}
-          </button>
+          <>
+            {/* ↻ Re-sync button — LEFT of Brain button, only shown when synced */}
+            {synced && (
+              <button
+                className={`note-resync-btn ${syncing ? 'syncing' : ''}`}
+                onClick={handleResync}
+                disabled={syncing}
+                title="Re-sync to Brain (re-embeds if content changed)"
+              >
+                {syncing ? '⏳' : '↻'}
+              </button>
+            )}
+            {/* ✓ Brain button — toggles sync/remove */}
+            <button
+              className={`note-sync-btn ${synced ? 'synced' : ''} ${syncing ? 'syncing' : ''}`}
+              onClick={handleBrainClick}
+              disabled={syncing}
+              title={synced ? 'Click to remove from Brain' : 'Sync to Brain'}
+            >
+              {syncing ? '⏳' : synced ? '✓ Brain' : '🧠 Sync'}
+            </button>
+          </>
         )}
       </div>
     </div>

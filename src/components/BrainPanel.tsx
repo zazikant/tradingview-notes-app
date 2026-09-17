@@ -21,6 +21,7 @@ interface BrainDocument {
   storage_path: string | null;
   created_at: string;
   updated_at: string;
+  ticker?: string;  // populated for synced notes (note-<id>.txt) by /api/brain/documents
 }
 
 interface ChatMessage {
@@ -345,12 +346,33 @@ export function BrainPanel({ onClose }: BrainPanelProps) {
     }
   }, []);
 
-  // ─── Docs rail: multi-select + bulk delete ──────────────────────────
+  // ─── Docs rail: multi-select + bulk delete + pagination ──────────────────
+  const PAGE_SIZE_DOCS = 25;  // docs per page in the rail
+
   const filteredDocs = useMemo(() => {
     const q = docSearch.trim().toLowerCase();
     if (!q) return docs;
-    return docs.filter((d) => d.filename.toLowerCase().includes(q));
+    return docs.filter((d) => {
+      // Match against filename OR ticker (ticker is more user-friendly for notes).
+      const ticker = (d as BrainDocument).ticker || '';
+      return (
+        d.filename.toLowerCase().includes(q) ||
+        ticker.toLowerCase().includes(q)
+      );
+    });
   }, [docs, docSearch]);
+
+  // Pagination state for the docs rail — handles large synced-note sets.
+  const [docsPage, setDocsPage] = useState(0);
+  const docsPageCount = Math.max(1, Math.ceil(filteredDocs.length / PAGE_SIZE_DOCS));
+  // Clamp page if filtered list shrank (e.g. user typed a search filter).
+  useEffect(() => {
+    if (docsPage > docsPageCount - 1) setDocsPage(Math.max(0, docsPageCount - 1));
+  }, [docsPage, docsPageCount]);
+  const pagedDocs = useMemo(
+    () => filteredDocs.slice(docsPage * PAGE_SIZE_DOCS, (docsPage + 1) * PAGE_SIZE_DOCS),
+    [filteredDocs, docsPage],
+  );
 
   const toggleDocSelect = useCallback((filename: string) => {
     setSelectedDocs((prev) => {
@@ -358,6 +380,21 @@ export function BrainPanel({ onClose }: BrainPanelProps) {
       if (n.has(filename)) n.delete(filename); else n.add(filename);
       return n;
     });
+  }, []);
+
+  // "Select all" — selects every doc on the CURRENT PAGE (not all filtered),
+  // so the user can grab a manageable batch at a time. A separate "Select all
+  // filtered (N)" link is shown when there are more pages.
+  const selectAllOnPage = useCallback(() => {
+    setSelectedDocs(new Set(pagedDocs.map((d) => d.filename)));
+  }, [pagedDocs]);
+
+  const selectAllFiltered = useCallback(() => {
+    setSelectedDocs(new Set(filteredDocs.map((d) => d.filename)));
+  }, [filteredDocs]);
+
+  const clearDocSelection = useCallback(() => {
+    setSelectedDocs(new Set());
   }, []);
 
   const exitDocSelectMode = useCallback(() => {
@@ -589,7 +626,7 @@ export function BrainPanel({ onClose }: BrainPanelProps) {
                 <input
                   type="text"
                   className="brain-docs-search"
-                  placeholder="Search by filename…"
+                  placeholder="Search by name or ticker…"
                   value={docSearch}
                   onChange={(e) => setDocSearch(e.target.value)}
                   disabled={bulkDocAction !== 'idle'}
@@ -607,14 +644,48 @@ export function BrainPanel({ onClose }: BrainPanelProps) {
               {/* Bulk action bar — visible when in select mode */}
               {docSelectMode && (
                 <div className="brain-docs-bulk-bar">
-                  <span className="brain-docs-bulk-count">
-                    {selectedDocs.size} selected
-                    {bulkDocProgress && (
-                      <span className="brain-docs-bulk-progress">
-                        {' '}— deleting {bulkDocProgress.current}/{bulkDocProgress.total}…
-                      </span>
+                  <div className="brain-docs-bulk-left">
+                    <span className="brain-docs-bulk-count">
+                      {selectedDocs.size} selected
+                      {bulkDocProgress && (
+                        <span className="brain-docs-bulk-progress">
+                          {' '}— deleting {bulkDocProgress.current}/{bulkDocProgress.total}…
+                        </span>
+                      )}
+                    </span>
+                    {/* Select-all helpers — "Select page" always shown,
+                        "Select all filtered (N)" shown when there's more than one page. */}
+                    <button
+                      type="button"
+                      className="brain-docs-bulk-link"
+                      onClick={selectAllOnPage}
+                      disabled={bulkDocAction !== 'idle' || pagedDocs.length === 0}
+                      title="Select every doc on the current page"
+                    >
+                      Select page ({pagedDocs.length})
+                    </button>
+                    {docsPageCount > 1 && (
+                      <button
+                        type="button"
+                        className="brain-docs-bulk-link"
+                        onClick={selectAllFiltered}
+                        disabled={bulkDocAction !== 'idle'}
+                        title="Select every doc matching the current search filter"
+                      >
+                        Select all ({filteredDocs.length})
+                      </button>
                     )}
-                  </span>
+                    {selectedDocs.size > 0 && (
+                      <button
+                        type="button"
+                        className="brain-docs-bulk-link"
+                        onClick={clearDocSelection}
+                        disabled={bulkDocAction !== 'idle'}
+                      >
+                        Clear
+                      </button>
+                    )}
+                  </div>
                   <div className="brain-docs-bulk-actions">
                     <button
                       type="button"
@@ -646,10 +717,15 @@ export function BrainPanel({ onClose }: BrainPanelProps) {
                     No files match <strong>“{docSearch}”</strong>. Try a different search.
                   </div>
                 ) : (
-                  filteredDocs.map((d) => {
+                  pagedDocs.map((d) => {
                     const m = d.filename.match(/^note-(.+)\.txt$/);
                     const isNote = !!m;
-                    const label = isNote ? m![1] : d.filename;
+                    const ticker = (d as BrainDocument).ticker || '';
+                    // For synced notes: show the ticker as the primary label
+                    // (falls back to client_id when the note has no ticker).
+                    // For uploaded files: show the original filename.
+                    const label = isNote ? (ticker || m![1]) : d.filename;
+                    const sub = isNote && ticker ? m![1] : null; // show client_id as subtitle when ticker is the label
                     const icon = isNote ? '📝' : (d.filename.toLowerCase().endsWith('.pdf') ? '📄' : '📃');
                     const isSelected = selectedDocs.has(d.filename);
                     return (
@@ -666,6 +742,11 @@ export function BrainPanel({ onClose }: BrainPanelProps) {
                         <span className="brain-doc-icon">{icon}</span>
                         <div className="brain-doc-info">
                           <div className="brain-doc-name" title={d.filename}>{label}</div>
+                          {sub && (
+                            <div className="brain-doc-sub" title={`Note ID: ${sub}`}>
+                              {sub}
+                            </div>
+                          )}
                           <div className="brain-doc-meta">
                             {new Date(d.updated_at).toLocaleString()}
                           </div>
@@ -685,6 +766,37 @@ export function BrainPanel({ onClose }: BrainPanelProps) {
                   })
                 )}
               </div>
+
+              {/* Pagination footer — left/right arrows + page indicator.
+                  Only shown when there's more than one page of filtered docs. */}
+              {docsPageCount > 1 && (
+                <div className="brain-docs-pagination">
+                  <button
+                    type="button"
+                    className="brain-docs-page-btn"
+                    onClick={() => setDocsPage((p) => Math.max(0, p - 1))}
+                    disabled={docsPage === 0 || bulkDocAction !== 'idle'}
+                    title="Previous page"
+                  >
+                    ←
+                  </button>
+                  <span className="brain-docs-page-info">
+                    {docsPage + 1} / {docsPageCount}
+                    <span className="brain-docs-page-count">
+                      ({filteredDocs.length} item{filteredDocs.length !== 1 ? 's' : ''})
+                    </span>
+                  </span>
+                  <button
+                    type="button"
+                    className="brain-docs-page-btn"
+                    onClick={() => setDocsPage((p) => Math.min(docsPageCount - 1, p + 1))}
+                    disabled={docsPage === docsPageCount - 1 || bulkDocAction !== 'idle'}
+                    title="Next page"
+                  >
+                    →
+                  </button>
+                </div>
+              )}
             </aside>
           )}
         </div>

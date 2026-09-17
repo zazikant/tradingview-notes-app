@@ -1172,13 +1172,57 @@ body {
   color: var(--accent-text);
   border-color: var(--accent);
 }
+/* When synced, hover turns red to signal that click will REMOVE from Brain */
 .note-sync-btn.synced:hover:not(:disabled) {
-  background: var(--accent);
+  background: #c0392b;
   color: #fff;
+  border-color: #c0392b;
 }
 .note-sync-btn.syncing {
   opacity: 0.7;
   cursor: progress;
+}
+
+/* ↻ Re-sync button — sits to the LEFT of the ✓ Brain button.
+   Only visible on already-synced notes. Compact icon button. */
+.note-resync-btn {
+  font-family: var(--font-syne), 'Syne', sans-serif;
+  font-size: 13px;
+  font-weight: 700;
+  width: 22px;
+  height: 18px;
+  padding: 0;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  background: var(--surface2);
+  color: var(--muted);
+  cursor: pointer;
+  transition: all 0.15s;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  margin-left: auto;
+  margin-right: -2px;
+}
+.note-resync-btn:hover:not(:disabled) {
+  background: var(--accent-light);
+  border-color: var(--accent);
+  color: var(--accent-text);
+  transform: rotate(90deg);
+}
+.note-resync-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.note-resync-btn.syncing {
+  animation: brain-resync-spin 1s linear infinite;
+  color: var(--accent);
+  border-color: var(--accent);
+}
+@keyframes brain-resync-spin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
 }
 
 /* ─── Brain overlay (full-screen modal) ─── */
@@ -2000,6 +2044,106 @@ body {
   .bulk-action-bar {
     padding: 6px 8px;
   }
+  .brain-docs-bulk-bar {
+    padding: 6px 8px;
+  }
+}
+
+/* ─── Docs rail: pagination footer + bulk-link + doc subtitle ─── */
+
+/* Pagination footer (left/right arrows + page indicator) */
+.brain-docs-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px;
+  padding: 8px 12px;
+  border-top: 1px solid var(--border);
+  background: var(--surface);
+  flex-shrink: 0;
+}
+.brain-docs-page-btn {
+  font-family: var(--font-syne), 'Syne', sans-serif;
+  font-size: 14px;
+  font-weight: 700;
+  width: 28px;
+  height: 24px;
+  border-radius: 5px;
+  border: 1px solid var(--border);
+  background: var(--surface2);
+  color: var(--text);
+  cursor: pointer;
+  transition: all 0.15s;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.brain-docs-page-btn:hover:not(:disabled) {
+  background: var(--accent-light);
+  border-color: var(--accent);
+  color: var(--accent-text);
+}
+.brain-docs-page-btn:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+.brain-docs-page-info {
+  font-family: var(--font-syne), 'Syne', sans-serif;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text);
+  letter-spacing: 0.04em;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  line-height: 1.2;
+}
+.brain-docs-page-count {
+  font-size: 9.5px;
+  color: var(--muted);
+  font-weight: 400;
+}
+
+/* Bulk action bar: left side (count + select-all link) */
+.brain-docs-bulk-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.brain-docs-bulk-link {
+  background: none;
+  border: none;
+  color: var(--accent);
+  font-size: 10.5px;
+  font-family: var(--font-syne), 'Syne', sans-serif;
+  font-weight: 600;
+  cursor: pointer;
+  text-decoration: underline;
+  padding: 0;
+}
+.brain-docs-bulk-link:hover:not(:disabled) {
+  color: var(--accent-text);
+}
+.brain-docs-bulk-link:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Brain docs rail: subtitle (shows note client_id under the ticker label) */
+.brain-doc-sub {
+  font-size: 10px;
+  color: var(--muted);
+  font-family: 'JetBrains Mono', 'SF Mono', Menlo, monospace;
+  margin-top: 1px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Mobile: keep pagination + bulk bar from overflowing on narrow screens */
+@media (max-width: 768px) {
   .brain-docs-bulk-bar {
     padding: 6px 8px;
   }

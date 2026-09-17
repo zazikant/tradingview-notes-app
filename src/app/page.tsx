@@ -7,6 +7,7 @@ import { NotesPanel } from '@/components/NotesPanel';
 import { Editor } from '@/components/Editor';
 import { ToastManager, showToast } from '@/components/Toast';
 import { PinLock } from '@/components/PinLock';
+import { BrainPanel } from '@/components/BrainPanel';
 import { useNotes } from '@/hooks/useNotes';
 import { uid, fullDate } from '@/lib/utils';
 import { PALETTE } from '@/types';
@@ -14,6 +15,10 @@ import { PALETTE } from '@/types';
 export default function Home() {
   // PIN lock state — app is hidden until unlocked
   const [isUnlocked, setIsUnlocked] = useState(false);
+  // Brain panel open state
+  const [showBrain, setShowBrain] = useState(false);
+  // Count of synced documents — refreshed when the brain panel closes
+  const [brainSyncedCount, setBrainSyncedCount] = useState(0);
 
   const {
     activeId,
@@ -204,6 +209,34 @@ export default function Home() {
     setIsUnlocked(true);
   }, []);
 
+  // Brain panel handlers — also refresh the synced count when it closes
+  const handleOpenBrain = useCallback(() => {
+    setShowBrain(true);
+  }, []);
+  const handleCloseBrain = useCallback(() => {
+    setShowBrain(false);
+    // Refresh the count after a beat so the sidebar badge updates
+    setTimeout(() => {
+      fetch('/api/brain/documents', { cache: 'no-store' })
+        .then((r) => r.ok ? r.json() : null)
+        .then((json) => {
+          if (json?.documents) setBrainSyncedCount(json.documents.length);
+        })
+        .catch(() => {});
+    }, 300);
+  }, []);
+
+  // Load the synced-docs count once on first unlock so the sidebar shows it immediately
+  useEffect(() => {
+    if (!isUnlocked) return;
+    fetch('/api/brain/documents', { cache: 'no-store' })
+      .then((r) => r.ok ? r.json() : null)
+      .then((json) => {
+        if (json?.documents) setBrainSyncedCount(json.documents.length);
+      })
+      .catch(() => {});
+  }, [isUnlocked]);
+
   // Show PIN lock screen if not yet unlocked
   if (!isUnlocked) {
     return (
@@ -222,10 +255,14 @@ export default function Home() {
         <Sidebar
           onOpenRenameTag={handleOpenRenameTag}
           onOpenDeleteTag={handleOpenDeleteTag}
+          onOpenBrain={handleOpenBrain}
+          brainSyncedCount={brainSyncedCount}
         />
         <NotesPanel />
         <Editor onCopy={handleCopy} onDelete={handleDelete} onSave={handleSave} />
       </div>
+
+      {showBrain && <BrainPanel onClose={handleCloseBrain} />}
 
       {/* Mobile Bottom Nav */}
       <nav className="mobile-nav">

@@ -15,6 +15,66 @@ export function NotesPanel() {
   const loadMoreRef = useRef<HTMLDivElement>(null);
   const notesListRef = useRef<HTMLDivElement>(null);
 
+  // ─── Brain sync state ────────────────────────────────────────────
+  // Set of note client_ids that have been synced to the Brain.
+  // Loaded once on mount; updated optimistically when the user clicks Sync.
+  const [syncedNoteIds, setSyncedNoteIds] = useState<Set<string>>(new Set());
+  const [syncingNoteIds, setSyncingNoteIds] = useState<Set<string>>(new Set());
+
+  // Load the list of synced documents and mark each as a synced note id.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const r = await fetch('/api/brain/documents', { cache: 'no-store' });
+        if (!r.ok) return;
+        const json = await r.json();
+        const ids: string[] = (json.documents || [])
+          .map((d: { filename: string }) => {
+            const m = d.filename.match(/^note-(.+)\.txt$/);
+            return m ? m[1] : null;
+          })
+          .filter(Boolean) as string[];
+        if (!cancelled) setSyncedNoteIds(new Set(ids));
+      } catch (err) {
+        console.warn('[NotesPanel] failed to load synced docs', err);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  const handleSyncToBrain = useCallback(async (note: Note, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (syncingNoteIds.has(note.id)) return;
+    setSyncingNoteIds((prev) => new Set(prev).add(note.id));
+
+    try {
+      const r = await fetch('/api/brain/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          noteId: note.id,
+          ticker: note.ticker || '',
+          body: note.body || '',
+        }),
+      });
+      if (!r.ok) {
+        const errJson = await r.json().catch(() => ({}));
+        alert(`Sync failed: ${errJson.error || r.statusText}`);
+        return;
+      }
+      setSyncedNoteIds((prev) => new Set(prev).add(note.id));
+    } catch (err: any) {
+      alert(`Sync failed: ${err?.message || 'network error'}`);
+    } finally {
+      setSyncingNoteIds((prev) => {
+        const n = new Set(prev);
+        n.delete(note.id);
+        return n;
+      });
+    }
+  }, [syncingNoteIds]);
+
   // Pull-to-refresh support
   const { containerRef: pullRef, pullState, pullDistance } = usePullToRefresh(70, () => {
     // Reload the page to refresh all data
@@ -102,7 +162,15 @@ export function NotesPanel() {
         ) : (
           <>
             {visibleNotes.map(note => (
-              <NoteCard key={note.id} note={note} isActive={note.id === activeId} onClick={() => openNote(note.id)} />
+              <NoteCard
+                key={note.id}
+                note={note}
+                isActive={note.id === activeId}
+                onClick={() => openNote(note.id)}
+                synced={syncedNoteIds.has(note.id)}
+                syncing={syncingNoteIds.has(note.id)}
+                onSyncToBrain={handleSyncToBrain}
+              />
             ))}
             {hasMore && (
               <div ref={loadMoreRef} className="load-more-trigger">
@@ -129,16 +197,22 @@ interface NoteCardProps {
   note: Note;
   isActive: boolean;
   onClick: () => void;
+  synced: boolean;
+  syncing: boolean;
+  onSyncToBrain: (note: Note, e: React.MouseEvent) => void;
 }
 
-function NoteCard({ note, isActive, onClick }: NoteCardProps) {
+function NoteCard({ note, isActive, onClick, synced, syncing, onSyncToBrain }: NoteCardProps) {
   const { getTag, getTagColor } = useNotes();
 
   return (
     <div className={`note-card ${isActive ? 'active' : ''}`} onClick={onClick}>
       <div className="note-card-top">
         <span className="note-ticker" style={{ whiteSpace: 'pre-wrap' }}>{note.ticker || '—'}</span>
-        <span className="note-date-small">{relDate(note.created)}</span>
+        <div className="note-card-top-right">
+          {synced && <span className="note-brain-badge" title="Synced to Brain">🧠</span>}
+          <span className="note-date-small">{relDate(note.created)}</span>
+        </div>
       </div>
       <div className="note-preview">
         {note.body || <span style={{ color: 'var(--border)' }}>No content</span>}
@@ -154,6 +228,14 @@ function NoteCard({ note, isActive, onClick }: NoteCardProps) {
             </span>
           );
         })}
+        <button
+          className={`note-sync-btn ${synced ? 'synced' : ''} ${syncing ? 'syncing' : ''}`}
+          onClick={(e) => onSyncToBrain(note, e)}
+          disabled={syncing}
+          title={synced ? 'Re-sync to Brain (updates if note changed)' : 'Sync to Brain'}
+        >
+          {syncing ? '⏳' : synced ? '✓ Brain' : '🧠 Sync'}
+        </button>
       </div>
     </div>
   );

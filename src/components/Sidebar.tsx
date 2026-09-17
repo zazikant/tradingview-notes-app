@@ -8,22 +8,17 @@ import { PALETTE, Tag } from '@/types';
 interface SidebarProps {
   onOpenRenameTag: (tagId: string) => void;
   onOpenDeleteTag: (tagId: string) => void;
+  onOpenBrain: () => void;
+  brainSyncedCount: number;
 }
 
-export function Sidebar({ onOpenRenameTag, onOpenDeleteTag }: SidebarProps) {
+export function Sidebar({ onOpenRenameTag, onOpenDeleteTag, onOpenBrain, brainSyncedCount }: SidebarProps) {
   const {
     tags,
-    currentFilter,
     activeTagFilters,
-    setFilter,
     toggleTagFilter,
     clearTagFilters,
-    setCustomRange,
-    customFrom,
-    customTo,
     addTag,
-    countFor,
-    notes,
   } = useNotes();
 
   const [showAddTagForm, setShowAddTagForm] = useState(false);
@@ -64,33 +59,6 @@ export function Sidebar({ onOpenRenameTag, onOpenDeleteTag }: SidebarProps) {
     setShowAddTagForm(false);
   }, [newTagName, selectedNewColor, tags, addTag]);
 
-  // Handle custom range application
-  // Parse the YYYY-MM-DD picker values as IST (Asia/Kolkata, UTC+05:30) day
-  // boundaries so the filter means "IST day", not "browser-local day".
-  const handleApplyCustomRange = useCallback(() => {
-    const fromInput = document.getElementById('dateFrom') as HTMLInputElement;
-    const toInput = document.getElementById('dateTo') as HTMLInputElement;
-    const from = fromInput?.value
-      ? Date.parse(`${fromInput.value}T00:00:00+05:30`)
-      : null;
-    const to = toInput?.value
-      ? Date.parse(`${toInput.value}T23:59:59.999+05:30`)
-      : null;
-    setCustomRange(
-      from === null ? null : Number(from),
-      to === null ? null : Number(to)
-    );
-  }, [setCustomRange]);
-
-  // Handle clearing custom range
-  const handleClearCustomRange = useCallback(() => {
-    const fromInput = document.getElementById('dateFrom') as HTMLInputElement;
-    const toInput = document.getElementById('dateTo') as HTMLInputElement;
-    if (fromInput) fromInput.value = '';
-    if (toInput) toInput.value = '';
-    setCustomRange(null, null);
-  }, [setCustomRange]);
-
   return (
     <aside className="sidebar" ref={setSidebarRef} style={{ position: 'relative' }}>
       {/* Pull-to-refresh indicator (mobile only) */}
@@ -106,43 +74,20 @@ export function Sidebar({ onOpenRenameTag, onOpenDeleteTag }: SidebarProps) {
           'Pull to refresh'
         )}
       </div>
-      {/* Date filters */}
-      <div className="sidebar-section">
-        <div className="sidebar-label">Date</div>
-        <button
-          className={`filter-btn ${currentFilter === 'all' ? 'active' : ''}`}
-          onClick={() => setFilter('all')}
-        >
-          <span className="filter-icon">📋</span> All notes{' '}
-          <span className="count">{notes.length}</span>
-        </button>
-        <button
-          className={`filter-btn ${currentFilter === 'custom' ? 'active' : ''}`}
-          onClick={() => setFilter('custom')}
-        >
-          <span className="filter-icon">✂️</span> Custom range{' '}
-          <span className="count">{countFor('custom')}</span>
-        </button>
-      </div>
 
-      {/* Custom date range */}
-      <div
-        className="date-custom-wrap"
-        style={{ display: currentFilter === 'custom' ? 'block' : 'none' }}
-      >
-        <div id="activeRangeBadge"></div>
-        <div className="date-range-row">
-          <input type="date" className="date-input" id="dateFrom" title="From" />
-          <span className="date-range-sep">→</span>
-          <input type="date" className="date-input" id="dateTo" title="To" />
-        </div>
-        <div className="date-range-row" style={{ marginTop: '6px' }}>
-          <button className="date-apply-btn" onClick={handleApplyCustomRange}>
-            Apply
-          </button>
-          <button className="date-clear-btn" onClick={handleClearCustomRange}>
-            Clear
-          </button>
+      {/* Chat Brain button — replaces the former Date / Custom-range section */}
+      <div className="sidebar-section">
+        <div className="sidebar-label">Brain</div>
+        <button
+          className="filter-btn brain-btn"
+          onClick={onOpenBrain}
+          title="Open Chat Brain — ask questions over your synced notes"
+        >
+          <span className="filter-icon">🧠</span> Chat RAG{' '}
+          <span className="count">{brainSyncedCount > 0 ? brainSyncedCount : '·'}</span>
+        </button>
+        <div className="brain-hint">
+          Sync notes via the 🧠 button on each note card, then ask questions here.
         </div>
       </div>
 

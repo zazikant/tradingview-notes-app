@@ -1,0 +1,518 @@
+
+# DoqueRag Installation 2026 — Complete Setup Guide
+
+> Updated: 2026-09-18
+> Covers: tradingview-notes-app (OpenCode + NVIDIA variants) + rag-document-assistant
+> This document captures the **complete** database schema, storage buckets, edge functions, and environment variables needed to set up a new project from scratch.
+
+---
+
+## 1. What this project is
+
+A trading notes app with an inbuilt Chat RAG (Retrieval-Augmented Generation) brain:
+
+- **Notes**: Users create trading notes (ticker, body, tags) stored in Supabase.
+- **Tags**: Color-coded tags for organizing notes (Bullish, Bearish, Watchlist, etc.).
+- **Documents**: Synced notes and uploaded PDFs/TXT/MD files are indexed in Pinecone for vector search.
+- **Chat Brain**: Ask questions about your notes — the app searches Pinecone for relevant chunks, synthesizes them, and streams an AI-generated answer with source citations.
+- **Storage Bucket**: Raw PDF blobs are stored in Supabase Storage.
+- **Edge Functions**: Hourly cleanup + daily keepalive to prevent free-tier pausing.
+
+---
+
+## 2. Database schema — ALL required tables
+
+### Extensions (must be installed)
+
+```sql
+CREATE EXTENSION IF NOT EXISTS pg_cron WITH SCHEMA pg_catalog;
+CREATE EXTENSION IF NOT EXISTS pg_net  WITH SCHEMA extensions;
+```
+
+---
+
+### Table 1 — `public.notes`
+
+Stores all trading notes. Each note has a ticker, body (markdown), tags, and timestamps.
+
+```sql
+CREATE TABLE IF NOT EXISTS public.notes (
+  client_id text PRIMARY KEY,
+  ticker    text DEFAULT '',
+  body      text DEFAULT '',
+  tags      text[] DEFAULT '{}',
+  created   BIGINT,
+  updated   BIGINT
+);
+```
+
+Column details:
+- `client_id` — Primary key. Generated client-side.
+- `ticker` — Stock ticker (e.g. AAPL, TSLA). May be empty string.
+- `body` — Markdown body. Can be very long.
+- `tags` — Array of tag client_id strings.
+- `created` — Epoch milliseconds (BIGINT). Set at insert, never mutated.
+- `updated` — Epoch milliseconds (BIGINT, nullable). Falls back to `created` when null.
+
+**Enable RLS:**
+```sql
+ALTER TABLE public.notes ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "notes anon full access" ON public.notes FOR ALL TO anon USING (true) WITH CHECK (true);
+CREATE POLICY "notes authenticated full access" ON public.notes FOR ALL TO authenticated USING (true) WITH CHECK (true);
+```
+
+---
+
+### Table 2 — `public.tags`
+
+Stores color-coded tags for organizing notes.
+
+```sql
+CREATE TABLE IF NOT EXISTS public.tags (
+  client_id text PRIMARY KEY,
+  name      text NOT NULL,
+  color     integer DEFAULT 0
+);
+```
+
+**Enable RLS:**
+```sql
+ALTER TABLE public.tags ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "tags anon full access" ON public.tags FOR ALL TO anon USING (true) WITH CHECK (true);
+CREATE POLICY "tags authenticated full access" ON public.tags FOR ALL TO authenticated USING (true) WITH CHECK (true);
+```
+
+---
+
+### Table 3 — `public.seed_status`
+
+Tracks whether the initial seed data has been loaded.
+
+```sql
+CREATE TABLE IF NOT EXISTS public.seed_status (
+  id        text PRIMARY KEY DEFAULT 'global',
+  seeded_at BIGINT DEFAULT 0
+);
+INSERT INTO public.seed_status (id, seeded_at) VALUES ('global', 0) ON CONFLICT DO NOTHING;
+```
+
+**Enable RLS:**
+```sql
+ALTER TABLE public.seed_status ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "seed_status anon full access" ON public.seed_status FOR ALL TO anon USING (true) WITH CHECK (true);
+```
+
+---
+
+### Table 4 — `public.documents`
+
+Records metadata for every synced note and uploaded file in the Brain.
+
+```sql
+CREATE TABLE IF NOT EXISTS public.documents (
+  filename     text PRIMARY KEY,
+  sha256       text NOT NULL,
+  storage_path text,
+  created_at   timestamptz DEFAULT now(),
+  updated_at   timestamptz DEFAULT now()
+);
+```
+
+Column details:
+- `filename` — Primary key. For synced notes: `note-<client_id>.txt`. For uploaded files: original filename.
+- `sha256` — SHA-256 hash of text content (used for dedup).
+- `storage_path` — Nullable. For PDFs: equals filename. For text: NULL.
+- `created_at` / `updated_at` — Timestamps with DEFAULT now().
+
+**Enable RLS (service-role-only):**
+```sql
+ALTER TABLE public.documents ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "service role full access on documents" ON public.documents;
+CREATE POLICY "service role full access on documents"
+  ON public.documents FOR ALL
+  TO service_role
+  USING (true) WITH CHECK (true);
+```
+
+**Updated_at trigger:**
+```sql
+CREATE OR REPLACE FUNCTION public.touch_documents_updated_at()
+RETURNS TRIGGER AS $$
+BEGIN
+  NEW.updated_at = now();
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS documents_touch_updated_at ON public.documents;
+CREATE TRIGGER documents_touch_updated_at
+  BEFORE UPDATE ON public.documents
+  FOR EACH ROW
+  EXECUTE FUNCTION public.touch_documents_updated_at();
+```
+
+**Prefix index:**
+```sql
+CREATE INDEX IF NOT EXISTS documents_filename_prefix_idx
+  ON public.documents (filename text_pattern_ops);
+```
+
+---
+
+## 3. Storage Bucket — `documents`
+
+Holds raw PDF blobs. Private bucket — only the service role can read/write.
+
+```sql
+INSERT INTO storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+VALUES (
+  'documents', 'documents', false, 52428800,
+  ARRAY['application/pdf', 'text/plain', 'text/markdown', 'application/octet-stream']
+)
+ON CONFLICT (id) DO UPDATE SET
+  public = EXCLUDED.public,
+  file_size_limit = EXCLUDED.file_size_limit,
+  allowed_mime_types = EXCLUDED.allowed_mime_types;
+```
+
+**Storage RLS policies (service-role-only):**
+```sql
+DROP POLICY IF EXISTS "documents bucket service role read" ON storage.objects;
+DROP POLICY IF EXISTS "documents bucket service role write" ON storage.objects;
+DROP POLICY IF EXISTS "documents bucket service role update" ON storage.objects;
+DROP POLICY IF EXISTS "documents bucket service role delete" ON storage.objects;
+
+CREATE POLICY "documents bucket service role read"
+  ON storage.objects FOR SELECT TO service_role
+  USING (bucket_id = 'documents');
+
+CREATE POLICY "documents bucket service role write"
+  ON storage.objects FOR INSERT TO service_role
+  WITH CHECK (bucket_id = 'documents');
+
+CREATE POLICY "documents bucket service role update"
+  ON storage.objects FOR UPDATE TO service_role
+  USING (bucket_id = 'documents') WITH CHECK (bucket_id = 'documents');
+
+CREATE POLICY "documents bucket service role delete"
+  ON storage.objects FOR DELETE TO service_role
+  USING (bucket_id = 'documents');
+```
+
+---
+
+## 4. Edge Functions
+
+### 4.1 `daily-keepalive`
+
+```typescript
+// supabase/functions/daily-keepalive/index.ts
+import "jsr:@supabase/functions-js/edge-runtime.d.ts"
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2"
+
+Deno.serve(async (_req) => {
+  try {
+    const supabaseUrl = Deno.env.get('SUPABASE_URL')!
+    const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
+    const supabase = createClient(supabaseUrl, supabaseKey)
+    const { data, error } = await supabase.from('documents').select('filename').limit(1)
+    return new Response(JSON.stringify({
+      status: error ? 'failed' : 'ok',
+      timestamp: new Date().toISOString(),
+      data,
+      error: error?.message
+    }), { headers: { 'Content-Type': 'application/json' } })
+  } catch (e) {
+    return new Response(JSON.stringify({
+      status: 'error', timestamp: new Date().toISOString(), message: e.message
+    }), { headers: { 'Content-Type': 'application/json' }, status: 500 })
+  }
+})
+```
+
+Deploy: `supabase functions deploy daily-keepalive --no-verify-jwt`
+
+### 4.2 `cron-cleanup`
+
+```typescript
+// supabase/functions/cron-cleanup/index.ts
+import "jsr:@supabase/functions-js/edge-runtime.d.ts"
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2"
+
+Deno.serve(async (_req) => {
+  const summary = { scanned: 0, deleted: 0, kept: 0, errors: [] as string[] }
+  try {
+    const supabaseUrl = Deno.env.get('SUPABASE_URL') || Deno.env.get('SUPABASE_PROJECT_URL')
+    const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
+    if (!supabaseUrl || !supabaseKey) {
+      summary.errors.push('Missing env vars')
+      return new Response(JSON.stringify(summary), { status: 500 })
+    }
+    const supabase = createClient(supabaseUrl, supabaseKey)
+    const { data: storageFiles } = await supabase.storage.from('documents').list()
+    const { data: docRows } = await supabase.from('documents').select('filename, storage_path')
+    const referencedPaths = new Set((docRows || []).map((r: any) => r.storage_path).filter(Boolean))
+    const orphans = (storageFiles || []).filter((f: any) => !referencedPaths.has(f.name))
+    summary.scanned = (storageFiles || []).length
+    if (orphans.length > 0) {
+      const { error } = await supabase.storage.from('documents').remove(orphans.map((f: any) => f.name))
+      if (!error) summary.deleted = orphans.length
+    }
+    summary.kept = summary.scanned - summary.deleted
+    return new Response(JSON.stringify({ status: 'ok', ...summary }), { headers: { 'Content-Type': 'application/json' } })
+  } catch (e) {
+    summary.errors.push(e.message)
+    return new Response(JSON.stringify({ status: 'error', ...summary }), { status: 500 })
+  }
+})
+```
+
+Deploy: `supabase functions deploy cron-cleanup --no-verify-jwt`
+
+---
+
+## 5. Scheduled jobs (pg_cron + pg_net)
+
+### 5.1 cron-cleanup-hourly — every hour
+
+```sql
+SELECT cron.schedule(
+  'cron-cleanup-hourly',
+  '0 * * * *',
+  $$
+    SELECT net.http_post(
+      url    := 'https://<PROJECT_REF>.supabase.co/functions/v1/cron-cleanup',
+      headers := jsonb_build_object(
+        'Content-Type', 'application/json',
+        'Authorization', 'Bearer ' || current_setting('app.settings.service_role_key', true)
+      ),
+      body   := '{}'::jsonb
+    )
+  $$
+);
+```
+
+### 5.2 daily-keepalive — every day at 00:00 UTC
+
+```sql
+SELECT cron.schedule(
+  'daily-keepalive',
+  '0 0 * * *',
+  'SELECT 1'
+);
+```
+
+> Note: Set the `app.settings.service_role_key` GUC in Supabase Dashboard → Database → Custom Postgres Config.
+
+### Refresh schema cache
+
+```sql
+NOTIFY pgrst, 'reload schema';
+```
+
+---
+
+## 6. Environment Variables (Vercel)
+
+| Key | Description | Example |
+|-----|-------------|---------|
+| `NEXT_PUBLIC_SUPABASE_URL` | Supabase project URL | `https://<PROJECT_REF>.supabase.co` |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase publishable (anon) key | `sb_publishable_...` |
+| `SUPABASE_SERVICE_ROLE_KEY` | Supabase secret (service role) key | `sb_secret_...` |
+| `PINECONE_API_KEY` | Pinecone account API key | `pcsk_...` |
+| `OPENCODE_API_KEY` | OpenCode gateway API key (GLM-5.1) | `sk-nEtb...` |
+| `NVIDIA_API_KEY` | NVIDIA API key (Muse Glimmer 30B — NVIDIA variant only) | `nvapi-...` |
+| `PINECONE_INDEX_NAME` | (optional) Pinecone index name | `rag-documents` |
+
+> Vercel Hobby limits: API route body size = 4.5 MB hard limit. Function timeout = 60s (Node) / 30s (Edge).
+
+---
+
+## 7. End-to-end setup checklist
+
+- [ ] 1. Create new Supabase project; note PROJECT_REF and keys.
+- [ ] 2. Enable extensions: pg_cron, pg_net
+- [ ] 3. Create notes table (client_id, ticker, body, tags, created, updated)
+- [ ] 4. Create tags table (client_id, name, color)
+- [ ] 5. Create seed_status table (id, seeded_at)
+- [ ] 6. Create documents table (filename, sha256, storage_path, created_at, updated_at)
+- [ ] 7. Enable RLS on all tables (see Section 2 for per-table policies)
+- [ ] 8. Add updated_at trigger on documents
+- [ ] 9. Add prefix index on documents
+- [ ] 10. Create Storage bucket `documents` (private, 50 MB limit)
+- [ ] 11. Add Storage RLS policies (service-role-only)
+- [ ] 12. Deploy edge functions (daily-keepalive, cron-cleanup)
+- [ ] 13. Schedule cron jobs (hourly cleanup + daily keepalive)
+- [ ] 14. Refresh schema cache: NOTIFY pgrst, 'reload schema'
+- [ ] 15. Set Vercel environment variables
+- [ ] 16. Verify tables, cron jobs, and storage bucket exist
+
+---
+
+## 8. COMPLETE SQL SCRIPT (copy-paste into Supabase SQL Editor)
+
+> This single script creates ALL tables, RLS policies, triggers, storage bucket, storage policies, cron jobs, and schema cache refresh. Idempotent — safe to re-run.
+> IMPORTANT: Replace `<PROJECT_REF>` with your actual project reference.
+
+```sql
+-- ═══════════════════════════════════════════════════════════════
+-- DoqueRag Complete Setup Script
+-- ═══════════════════════════════════════════════════════════════
+
+-- Extensions
+CREATE EXTENSION IF NOT EXISTS pg_cron WITH SCHEMA pg_catalog;
+CREATE EXTENSION IF NOT EXISTS pg_net WITH SCHEMA extensions;
+
+-- ═══ 1. NOTES TABLE ═══
+CREATE TABLE IF NOT EXISTS public.notes (
+  client_id text PRIMARY KEY,
+  ticker text DEFAULT '',
+  body text DEFAULT '',
+  tags text[] DEFAULT '{}',
+  created BIGINT,
+  updated BIGINT
+);
+ALTER TABLE public.notes ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "notes anon full access" ON public.notes;
+CREATE POLICY "notes anon full access" ON public.notes FOR ALL TO anon USING (true) WITH CHECK (true);
+DROP POLICY IF EXISTS "notes authenticated full access" ON public.notes;
+CREATE POLICY "notes authenticated full access" ON public.notes FOR ALL TO authenticated USING (true) WITH CHECK (true);
+ALTER TABLE public.notes ADD COLUMN IF NOT EXISTS updated BIGINT;
+UPDATE public.notes SET updated = created WHERE updated IS NULL;
+
+-- ═══ 2. TAGS TABLE ═══
+CREATE TABLE IF NOT EXISTS public.tags (
+  client_id text PRIMARY KEY,
+  name text NOT NULL,
+  color integer DEFAULT 0
+);
+ALTER TABLE public.tags ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "tags anon full access" ON public.tags;
+CREATE POLICY "tags anon full access" ON public.tags FOR ALL TO anon USING (true) WITH CHECK (true);
+DROP POLICY IF EXISTS "tags authenticated full access" ON public.tags;
+CREATE POLICY "tags authenticated full access" ON public.tags FOR ALL TO authenticated USING (true) WITH CHECK (true);
+
+-- ═══ 3. SEED_STATUS TABLE ═══
+CREATE TABLE IF NOT EXISTS public.seed_status (
+  id text PRIMARY KEY DEFAULT 'global',
+  seeded_at BIGINT DEFAULT 0
+);
+INSERT INTO public.seed_status (id, seeded_at) VALUES ('global', 0) ON CONFLICT DO NOTHING;
+ALTER TABLE public.seed_status ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "seed_status anon full access" ON public.seed_status;
+CREATE POLICY "seed_status anon full access" ON public.seed_status FOR ALL TO anon USING (true) WITH CHECK (true);
+
+-- ═══ 4. DOCUMENTS TABLE ═══
+CREATE TABLE IF NOT EXISTS public.documents (
+  filename text PRIMARY KEY,
+  sha256 text NOT NULL,
+  storage_path text,
+  created_at timestamptz DEFAULT now(),
+  updated_at timestamptz DEFAULT now()
+);
+ALTER TABLE public.documents ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "service role full access on documents" ON public.documents;
+CREATE POLICY "service role full access on documents"
+  ON public.documents FOR ALL TO service_role
+  USING (true) WITH CHECK (true);
+
+-- Updated_at trigger
+CREATE OR REPLACE FUNCTION public.touch_documents_updated_at()
+RETURNS TRIGGER AS $$
+BEGIN
+  NEW.updated_at = now();
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+DROP TRIGGER IF EXISTS documents_touch_updated_at ON public.documents;
+CREATE TRIGGER documents_touch_updated_at
+  BEFORE UPDATE ON public.documents
+  FOR EACH ROW
+  EXECUTE FUNCTION public.touch_documents_updated_at();
+
+-- Prefix index
+CREATE INDEX IF NOT EXISTS documents_filename_prefix_idx
+  ON public.documents (filename text_pattern_ops);
+
+-- ═══ 5. STORAGE BUCKET ═══
+INSERT INTO storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+VALUES (
+  'documents', 'documents', false, 52428800,
+  ARRAY['application/pdf', 'text/plain', 'text/markdown', 'application/octet-stream']
+)
+ON CONFLICT (id) DO UPDATE SET
+  public = EXCLUDED.public,
+  file_size_limit = EXCLUDED.file_size_limit,
+  allowed_mime_types = EXCLUDED.allowed_mime_types;
+
+-- ═══ 6. STORAGE RLS POLICIES ═══
+DROP POLICY IF EXISTS "documents bucket service role read" ON storage.objects;
+DROP POLICY IF EXISTS "documents bucket service role write" ON storage.objects;
+DROP POLICY IF EXISTS "documents bucket service role update" ON storage.objects;
+DROP POLICY IF EXISTS "documents bucket service role delete" ON storage.objects;
+
+CREATE POLICY "documents bucket service role read"
+  ON storage.objects FOR SELECT TO service_role
+  USING (bucket_id = 'documents');
+CREATE POLICY "documents bucket service role write"
+  ON storage.objects FOR INSERT TO service_role
+  WITH CHECK (bucket_id = 'documents');
+CREATE POLICY "documents bucket service role update"
+  ON storage.objects FOR UPDATE TO service_role
+  USING (bucket_id = 'documents') WITH CHECK (bucket_id = 'documents');
+CREATE POLICY "documents bucket service role delete"
+  ON storage.objects FOR DELETE TO service_role
+  USING (bucket_id = 'documents');
+
+-- ═══ 7. CRON JOBS ═══
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM cron.job WHERE jobname = 'cron-cleanup-hourly') THEN
+    PERFORM cron.schedule(
+      'cron-cleanup-hourly',
+      '0 * * * *',
+      $$
+        SELECT net.http_post(
+          url := 'https://<PROJECT_REF>.supabase.co/functions/v1/cron-cleanup',
+          headers := jsonb_build_object(
+            'Content-Type', 'application/json',
+            'Authorization', 'Bearer ' || current_setting('app.settings.service_role_key', true)
+          ),
+          body := '{}'::jsonb
+        )
+      $$
+    );
+  END IF;
+EXCEPTION WHEN OTHERS THEN
+  RAISE NOTICE 'cron-cleanup-hourly: %', SQLERRM;
+END $$;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM cron.job WHERE jobname = 'daily-keepalive') THEN
+    PERFORM cron.schedule('daily-keepalive', '0 0 * * *', $$ SELECT 1 $$);
+  END IF;
+EXCEPTION WHEN OTHERS THEN
+  RAISE NOTICE 'daily-keepalive: %', SQLERRM;
+END $$;
+
+-- ═══ 8. REFRESH SCHEMA CACHE ═══
+NOTIFY pgrst, 'reload schema';
+```
+
+---
+
+## 9. Key references
+
+| Item | Value |
+|------|-------|
+| Tables | notes, tags, seed_status, documents |
+| Storage bucket | documents (private, 50 MB limit) |
+| Edge functions | daily-keepalive, cron-cleanup |
+| Cron jobs | cron-cleanup-hourly (every hour), daily-keepalive (daily 00:00 UTC) |
+| Pinecone index | rag-documents (1024-dim cosine, multilingual-e5-large) |
+| LLM (OpenCode variant) | GLM-5.1 via https://opencode.ai/zen/go/v1 |
+| LLM (NVIDIA variant) | Muse Glimmer 30B via https://integrate.api.nvidia.com/v1 |
+| Vercel Hobby limits | Body: 4.5 MB, Function timeout: 60s (Node) / 30s (Edge) |
+| PIN lock | 19081992 |

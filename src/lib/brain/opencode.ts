@@ -11,7 +11,7 @@
  *   OPENCODE_API_KEY        — your OpenCode API key
  *
  * Gateway: https://opencode.ai/zen/go/v1/chat/completions
- * Model:   glm-5.3-flash (glm-5.1 was deprecated by OpenCode on 2026-09-28)
+ * Model:   glm-5.2 (glm-5.1 was deprecated by OpenCode on 2026-09-28)
  *
  * CRITICAL: GLM 5.3 is a thinking-only model. We MUST send reasoning_effort:'low'
  * to keep the reasoning overhead minimal while still ensuring the final answer
@@ -20,7 +20,7 @@
  */
 
 const OPENCODE_GATEWAY = 'https://opencode.ai/zen/go/v1/chat/completions';
-const OPENCODE_DEFAULT_MODEL = 'glm-5.3-flash';
+const OPENCODE_DEFAULT_MODEL = 'glm-5.2';
 // 55s per-call timeout — under Vercel Hobby's 60s Node runtime cap.
 // The previous 120s was never reachable on Hobby (Vercel kills at 60s).
 // GLM-5.3-flash typically responds in 3-15s, so 55s is plenty.

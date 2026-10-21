@@ -12,7 +12,7 @@ export const maxDuration = 60;  // Vercel Hobby Node cap (was 180 — Vercel ign
 
 // ─── Prompts (ported verbatim from rag-document-assistant-opencode) ─────────
 // These are the exact prompts that produced good OpenCode output in the
-// source RAG project. Do not paraphrase — the wording matters for GLM-5.1.
+// source RAG project. Do not paraphrase — the wording matters for GLM-5.3.
 
 const SYSTEM_PROMPT = `You are an intelligent second-brain assistant with deep reasoning ability. You don't merely retrieve — you REASON through the context to produce the smartest, most useful answer.
 

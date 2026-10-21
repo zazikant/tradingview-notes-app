@@ -31,9 +31,9 @@ Clone the chosen repo with `git clone`, or import it directly from Vercel's new-
 
 | Use case | Clone from | LLM provider | LLM env var |
 |---|---|---|---|
-| Default — OpenCode GLM-5.1 | `github.com/zazikant/tradingview-notes-app` | GLM-5.1 via opencode.ai | `OPENCODE_API_KEY` |
+| Default — OpenCode GLM-5.3 | `github.com/zazikant/tradingview-notes-app` | GLM-5.3 via opencode.ai | `OPENCODE_API_KEY` |
 | NVIDIA-hosted LLM | `github.com/zazikant/tradingview-notes-app-nvidia` | GPT-OSS 20B via build.nvidia.com | `NVIDIA_API_KEY` |
-| Shweta-specific fork | `github.com/zazikant/rag-document-assistant_shweta_client` | GLM-5.1 via opencode.ai | `OPENCODE_API_KEY` |
+| Shweta-specific fork | `github.com/zazikant/rag-document-assistant_shweta_client` | GLM-5.3 via opencode.ai | `OPENCODE_API_KEY` |
 
 > **Code state (as of 2026-09-22):** All three repos ship with the synchronous delete-by-IDs fix for Pinecone serverless on their `main` branch. No manual patching needed — clone from `main` and you get the fix automatically. This closes the previous bug where deleted notes sometimes still appeared in chat answers.
 
@@ -399,7 +399,7 @@ Set these in Vercel → Project Settings → Environment Variables. Mark `OPENCO
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase publishable (anon) key | `sb_publishable_...` |
 | `SUPABASE_SERVICE_ROLE_KEY` | Supabase secret (service role) key — server-only | `sb_secret_...` |
 | `PINECONE_API_KEY` | Pinecone account API key | `pcsk_...` |
-| `OPENCODE_API_KEY` | OpenCode gateway API key (GLM-5.1) — OpenCode variant only | `sk-nEtb...` |
+| `OPENCODE_API_KEY` | OpenCode gateway API key (GLM-5.3) — OpenCode variant only | `sk-nEtb...` |
 | `NVIDIA_API_KEY` | NVIDIA integrate API key — NVIDIA variant only | `nvapi-...` |
 | `PINECONE_INDEX_NAME` | (optional) Pinecone index name — defaults to `rag-documents` | `rag-documents` |
 
@@ -411,7 +411,7 @@ If you don't already have an LLM API key for the chosen variant:
 
 | Variant | Provider URL | How to get the key |
 |---|---|---|
-| OpenCode (GLM-5.1) | https://opencode.ai/ | Sign up → Dashboard → API Keys → Create new key. Copied value starts with `sk-...` |
+| OpenCode (GLM-5.3) | https://opencode.ai/ | Sign up → Dashboard → API Keys → Create new key. Copied value starts with `sk-...` |
 | NVIDIA (GPT-OSS 20B) | https://build.nvidia.com/ | Sign in with NVIDIA account → Choose a model (e.g. `openai/gpt-oss-20b`) → Get API key. Copied value starts with `nvapi-...` |
 
 ### 8.2 PIN lock customization (NEW)
@@ -654,7 +654,7 @@ NOTIFY pgrst, 'reload schema';
 | Edge functions | `daily-keepalive`, `cron-cleanup` |
 | Cron jobs | `cron-cleanup-hourly` (every hour), `daily-keepalive` (daily 00:00 UTC) |
 | Pinecone index | `rag-documents` (1024-dim cosine, `multilingual-e5-large`, serverless AWS us-east-1) |
-| LLM (OpenCode variant) | GLM-5.1 via `https://opencode.ai/zen/go/v1` |
+| LLM (OpenCode variant) | GLM-5.3 via `https://opencode.ai/zen/go/v1` |
 | LLM (NVIDIA variant) | GPT-OSS 20B via `https://integrate.api.nvidia.com/v1` |
 | Vercel Hobby limits | Body: 4.5 MB, Function timeout: 60s (Node) / 30s (Edge) |
 | Default PIN lock | `19081992` — change in `src/components/PinLock.tsx` before deploy |

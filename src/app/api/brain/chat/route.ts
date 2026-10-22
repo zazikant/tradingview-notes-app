@@ -6,6 +6,12 @@ import {
   type SearchHit,
 } from '@/lib/brain/pinecone';
 import { opencodeChatStreamControlled } from '@/lib/brain/opencode';
+import {
+  runQualityGatedReduce,
+  callWithRetryAwareness,
+  MAX_ITERATIONS,
+  type ErrorEntry,
+} from '@/lib/brain/ax-pipeline';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;  // Vercel Hobby Node cap (was 180 — Vercel ignored it and killed at 60s)
@@ -71,17 +77,21 @@ const MAX_ANSWER_ATTEMPTS = 3;
  *   history: optional array of { role: 'user' | 'assistant', content: string }
  *            for multi-turn chat. Default empty.
  *
- * Pipeline (matches rag-document-assistant-opencode):
+ * Pipeline (matches rag-document-assistant-opencode, with the AX DSPy
+ * quality gate ported from atomic-graph-opencode):
  *   1. Search Pinecone for relevant chunks
  *   2. Aggregate by filename (rerankAndAggregate)
  *   3. Build context (buildContextFromAggregated, 5000 chars)
  *   4. REDUCE stage — if any document has >1 chunk, call OpenCode with
  *      REDUCER_PROMPT to synthesize the multi-chunk context into a
  *      single coherent summary before the final answer. Streams nothing
- *      to the user — it's an internal prep step.
+ *      to the user — it's an internal prep step. The synthesis is then
+ *      run through the AX quality gate (VALIDATE → REFINE loop, score
+ *      0.0-1.0, threshold 0.75, time-budgeted) before it grounds the answer.
  *   5. ANSWER stage — stream the final answer via SYSTEM_PROMPT.
  *      max_tokens=32768 supports up to ~30K char outputs for complex
- *      technical questions.
+ *      technical questions. Retry attempts carry AX error-history awareness
+ *      (rate-limit / transient classification from callWithRetryAwareness).
  *
  * Response: text/event-stream with structured events:
  *   stage-start  { stage: 'search' | 'aggregate' | 'reduce' | 'answer' }
@@ -192,6 +202,45 @@ export async function POST(req: NextRequest) {
               elapsedMs: reduceResult.elapsedMs,
               summary: `${reducedContext.length} chars reduced context`,
             });
+
+            // ── AX DSPy quality gate on the synthesis (VALIDATE → REFINE) ─
+            // Ported word-to-word from atomic-graph-opencode: score the
+            // reduced context on a 0.0-1.0 rubric (temperature 0.1), refine
+            // with DSPy-compiled fix context when below the 0.75 threshold,
+            // revalidate — up to MAX_ITERATIONS, bounded by a 20s budget so
+            // the 60s Vercel cap still leaves room for the streamed answer.
+            send('stage-start', { stage: 'ax-validate' });
+            try {
+              const gate = await runQualityGatedReduce({
+                query,
+                chunksContext: context,
+                synthesis: reducedContext,
+                callLLM: async (systemPrompt, userContent, maxTokens, temperature) => {
+                  const r = await opencodeChatStreamControlled({
+                    messages: [
+                      { role: 'system', content: systemPrompt },
+                      { role: 'user', content: userContent },
+                    ],
+                    temperature,
+                    maxTokens,
+                    onLog: (line) => send('log', { line }),
+                    // Internal prep calls — never streamed to the user.
+                  });
+                  return r.content;
+                },
+                onLog: (line) => send('log', { line }),
+                timeBudgetMs: 20_000,
+              });
+              reducedContext = gate.synthesis;
+              send('log', {
+                line: `[ax-pipeline] gate complete — score=${gate.score}, iterations=${gate.iterations}, stages=[${gate.pipeline.join(',')}]`,
+              });
+            } catch (gateError: any) {
+              // The gate never throws by design; this is a belt-and-braces
+              // fallback — keep the raw reduced context.
+              send('log', { line: `[ax-pipeline] gate error: ${(gateError?.message || 'unknown').slice(0, 100)} — keeping reduced context` });
+            }
+            send('stage-end', { stage: 'ax-validate', ok: true, elapsedMs: 0, summary: 'AX quality gate finished' });
           } catch (reduceError: any) {
             send('log', { line: `[pipeline] Reduce failed: ${(reduceError?.message || 'unknown').slice(0, 100)} — using raw context` });
             send('stage-end', {
@@ -226,14 +275,18 @@ export async function POST(req: NextRequest) {
           { role: 'user', content: userContent },
         ];
 
-        // Pipeline-level retry: up to 3 attempts. Each attempt gets a fresh
-        // 55s budget. Between attempts, emit 'reset' so the client clears
-        // its partial answer buffer (prevents garbled concatenation).
+        // Pipeline-level retry: up to 3 attempts (Bible MAX_ITERATIONS).
+        // Each attempt gets a fresh 55s budget. Between attempts, emit
+        // 'reset' so the client clears its partial answer buffer (prevents
+        // garbled concatenation). Every failure is recorded AX-style
+        // (callWithRetryAwareness) with rate-limit / transient
+        // classification so the logs read like the Bible pipeline's.
         let answerOk = false;
         let lastErr = '';
+        const answerErrorHistory: ErrorEntry[] = [];
 
         for (let attempt = 1; attempt <= MAX_ANSWER_ATTEMPTS; attempt++) {
-          send('log', { line: `[pipeline] answer attempt ${attempt}/${MAX_ANSWER_ATTEMPTS}` });
+          send('log', { line: `[pipeline] answer attempt ${attempt}/${MAX_ANSWER_ATTEMPTS} (AX max_iterations=${MAX_ITERATIONS})` });
 
           // Before each retry, tell the client to clear its partial buffer.
           if (attempt > 1) {
@@ -241,13 +294,21 @@ export async function POST(req: NextRequest) {
           }
 
           try {
-            const result = await opencodeChatStreamControlled({
-              messages,
-              temperature: 0.3,   // matches source (was 0.4)
-              maxTokens: 32768,    // supports up to ~30K char outputs
-              onLog: (line) => send('log', { line }),
-              onChunk: (text) => send('chunk', { text }),
-            });
+            const result = await callWithRetryAwareness(
+              () =>
+                opencodeChatStreamControlled({
+                  messages,
+                  temperature: 0.3,   // matches source (was 0.4)
+                  maxTokens: 32768,    // supports up to ~30K char outputs
+                  onLog: (line) => send('log', { line }),
+                  onChunk: (text) => send('chunk', { text }),
+                }),
+              answerErrorHistory,
+              attempt,
+              'Answer',
+              'reduce', // closest Bible stage: internal prep/generation
+              (line) => send('log', { line }),
+            );
 
             send('stage-end', {
               stage: 'answer',
